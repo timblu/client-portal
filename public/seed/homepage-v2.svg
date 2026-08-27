@@ -1,0 +1,30 @@
+<svg width="960" height="720" viewBox="0 0 960 720" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <rect width="960" height="720" fill="#ffffff" />
+  <rect x="24" y="24" width="912" height="64" fill="#ffffff" stroke="#111111" stroke-width="1.5" />
+  <text x="44" y="62" font-size="16" fill="#111111">LOGO</text>
+  <text x="700" y="62" font-size="14" fill="#111111">Products · Pricing · Sign in</text>
+
+  <rect x="24" y="104" width="912" height="300" fill="#f2f2f2" stroke="#111111" stroke-width="1.5" />
+  <text x="44" y="170" font-size="30" fill="#111111">Hero headline, revised</text>
+  <text x="44" y="204" font-size="15" fill="#4b4b4b">Subhead tightened per feedback on v1.</text>
+  <rect x="44" y="234" width="150" height="42" fill="#111111" stroke="#111111" stroke-width="1.5" />
+  <text x="72" y="260" font-size="13" fill="#ffffff">Primary CTA</text>
+  <rect x="210" y="234" width="130" height="42" fill="#ffffff" stroke="#111111" stroke-width="1.5" />
+  <text x="234" y="260" font-size="13" fill="#111111">Secondary</text>
+  <rect x="560" y="140" width="340" height="240" fill="#e5e5e5" stroke="#111111" stroke-dasharray="4 4" />
+  <text x="660" y="265" font-size="13" fill="#8a8a8a">hero image</text>
+
+  <rect x="24" y="428" width="288" height="160" fill="#ffffff" stroke="#111111" stroke-width="1.5" />
+  <rect x="336" y="428" width="288" height="160" fill="#ffffff" stroke="#111111" stroke-width="1.5" />
+  <rect x="648" y="428" width="288" height="160" fill="#ffffff" stroke="#111111" stroke-width="1.5" />
+  <text x="44" y="460" font-size="14" fill="#111111">Feature one</text>
+  <text x="356" y="460" font-size="14" fill="#111111">Feature two</text>
+  <text x="668" y="460" font-size="14" fill="#111111">Feature three</text>
+  <text x="44" y="488" font-size="12" fill="#8a8a8a">Updated copy line</text>
+  <text x="356" y="488" font-size="12" fill="#8a8a8a">Updated copy line</text>
+  <text x="668" y="488" font-size="12" fill="#8a8a8a">Updated copy line</text>
+
+  <rect x="24" y="612" width="912" height="84" fill="#ffffff" stroke="#111111" stroke-width="1.5" />
+  <text x="44" y="648" font-size="13" fill="#111111">Footer</text>
+  <text x="44" y="670" font-size="11" fill="#8a8a8a">Link  ·  Link  ·  Link  ·  Link</text>
+</svg>

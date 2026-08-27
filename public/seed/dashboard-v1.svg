@@ -1,0 +1,31 @@
+<svg width="960" height="640" viewBox="0 0 960 640" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <rect width="960" height="640" fill="#ffffff" />
+  <rect x="24" y="24" width="200" height="592" fill="#ffffff" stroke="#111111" stroke-width="1.5" />
+  <text x="44" y="56" font-size="14" fill="#111111">Member Portal</text>
+  <text x="44" y="100" font-size="13" fill="#111111">Overview</text>
+  <text x="44" y="132" font-size="13" fill="#8a8a8a">Orders</text>
+  <text x="44" y="164" font-size="13" fill="#8a8a8a">Documents</text>
+  <text x="44" y="196" font-size="13" fill="#8a8a8a">Settings</text>
+
+  <rect x="248" y="24" width="688" height="72" fill="#ffffff" stroke="#111111" stroke-width="1.5" />
+  <text x="268" y="66" font-size="18" fill="#111111">Welcome back, Devon</text>
+
+  <rect x="248" y="120" width="220" height="120" fill="#ffffff" stroke="#111111" stroke-width="1.5" />
+  <rect x="484" y="120" width="220" height="120" fill="#ffffff" stroke="#111111" stroke-width="1.5" />
+  <rect x="716" y="120" width="220" height="120" fill="#ffffff" stroke="#111111" stroke-width="1.5" />
+  <text x="268" y="150" font-size="12" fill="#8a8a8a">Active orders</text>
+  <text x="268" y="188" font-size="26" fill="#111111">12</text>
+  <text x="504" y="150" font-size="12" fill="#8a8a8a">Open requests</text>
+  <text x="504" y="188" font-size="26" fill="#111111">3</text>
+  <text x="736" y="150" font-size="12" fill="#8a8a8a">Documents</text>
+  <text x="736" y="188" font-size="26" fill="#111111">27</text>
+
+  <rect x="248" y="264" width="688" height="352" fill="#ffffff" stroke="#111111" stroke-width="1.5" />
+  <text x="268" y="296" font-size="14" fill="#111111">Recent activity</text>
+  <line x1="268" y1="316" x2="916" y2="316" stroke="#d4d4d4" />
+  <text x="268" y="344" font-size="12" fill="#4b4b4b">Order #10432 shipped</text>
+  <line x1="268" y1="360" x2="916" y2="360" stroke="#d4d4d4" />
+  <text x="268" y="388" font-size="12" fill="#4b4b4b">Invoice INV-0091 issued</text>
+  <line x1="268" y1="404" x2="916" y2="404" stroke="#d4d4d4" />
+  <text x="268" y="432" font-size="12" fill="#4b4b4b">Support ticket #204 resolved</text>
+</svg>

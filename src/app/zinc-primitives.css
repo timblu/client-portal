@@ -1,0 +1,107 @@
+/**
+ * zinc-primitives.css
+ * Zinc Partners — UI Design System v1.0
+ *
+ * The raw 6×11 color scale as CSS custom properties.
+ * Brand anchors (★) are taken exactly from the logo artwork and are
+ * never rounded, re-derived, or adjusted for convenience. Changing
+ * either value is a BRAND decision, not a UI one — it goes back
+ * through the Brand Guidelines first.
+ *
+ * Shared lightness ladder (L%), applies across all six families:
+ * 50→97.1  100→93.7  200→86.1  300→73.9  400→59.6  500→48.4
+ * 600→39.5  700→33.0  800→28.6  900→23.9  950→15.9
+ *
+ * Load this file BEFORE semantic UI tokens.
+ * Do not reference these variables directly from component code —
+ * use the semantic layer instead.
+ */
+
+:root {
+
+  /* ---------- blue — Primary — carries Zinc Teal (brand anchor) ---------- */
+  --blue-50:  #F0FAFF;
+  --blue-100: #E0F5FE;
+  --blue-200: #B9EDFE;
+  --blue-300: #7BE0FE;
+  --blue-400: #36D0FA;
+  --blue-500: #0BBBEC;
+  --blue-600: #0098CA;
+  --blue-700: #017FAC; /* ★ brand anchor — Zinc Teal, the "Zn" mark & wordmark */
+  --blue-800: #056587;
+  --blue-900: #0B536F;
+  --blue-950: #07354A;
+
+  /* ---------- slate — Secondary — carries Slate Navy (brand anchor) ---------- */
+  --slate-50:  #F4F7FB;
+  --slate-100: #E8EFF6;
+  --slate-200: #CCDDEB;
+  --slate-300: #A0C0D9;
+  --slate-400: #6C9FC4;
+  --slate-500: #4A83AD;
+  --slate-600: #386891;
+  --slate-700: #2E5476;
+  --slate-800: #2D4E6B; /* ★ brand anchor — Slate Navy, the frame & "PARTNERS" */
+  --slate-900: #273E53;
+  --slate-950: #1A2837;
+
+  /* ---------- gray — Neutral — cool-tinted, no brand anchor ---------- */
+  --gray-50:  #F7F8F8;
+  --gray-100: #EEEFF0;
+  --gray-200: #DADCDD;
+  --gray-300: #BABDBF;
+  --gray-400: #949A9C;
+  --gray-500: #777D80;
+  --gray-600: #616669;
+  --gray-700: #515558;
+  --gray-800: #464A4C;
+  --gray-900: #3B3E3F;
+  --gray-950: #27292A;
+
+  /* ---------- green — Success — status only ---------- */
+  --green-50:  #F6F9F8;
+  --green-100: #EBF3EF;
+  --green-200: #D0E7DC;
+  --green-300: #A1D8BE;
+  --green-400: #69C79B;
+  --green-500: #40B77F;
+  --green-600: #359468;
+  --green-700: #2E7B57;
+  --green-800: #29694B;
+  --green-900: #24563F;
+  --green-950: #19382A;
+
+  /* ---------- amber — Warning — status only ---------- */
+  --amber-50:  #F9F8F6;
+  --amber-100: #F5F1E9;
+  --amber-200: #EFE1C8;
+  --amber-300: #EAC98F;
+  --amber-400: #E6AD4A;
+  --amber-500: #DE9619;
+  --amber-600: #B47A16;
+  --amber-700: #946514;
+  --amber-800: #7E5714;
+  --amber-900: #664814;
+  --amber-950: #422F0F;
+
+  /* ---------- red — Error — status only ---------- */
+  --red-50:  #F9F6F6;
+  --red-100: #F4EBEA;
+  --red-200: #EBD0CC;
+  --red-300: #E0A399;
+  --red-400: #D56C5B;
+  --red-500: #C8432F;
+  --red-600: #A23828;
+  --red-700: #863023;
+  --red-800: #722B20;
+  --red-900: #5D251D;
+  --red-950: #3C1A15;
+
+  /* ---------- type ----------
+   * Generic system UI stacks (not the Sora/Manrope/IBM Plex Mono
+   * specified upstream) — this product uses the OS-native UI font.
+   */
+  --font-display: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+}

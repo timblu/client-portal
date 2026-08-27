@@ -1,0 +1,174 @@
+/**
+ * zinc-ui-tokens.css
+ * Zinc Partners — UI Design System v1.0
+ *
+ * The semantic layer. Depends on zinc-primitives.css — load that file
+ * first. This is what components reference; components should import
+ * NEITHER the primitives file nor raw hex values directly.
+ *
+ * ★ marks tokens that resolve to a brand anchor (blue-700 / slate-800).
+ */
+
+:root {
+
+  /* ---------- surface & border ---------- */
+  --surface-page:     #FFFFFF;
+  --surface-subtle:   var(--gray-50);
+  --surface-sunken:   var(--gray-100);
+  --surface-inverse:  var(--slate-950);
+  --surface-brand:    var(--blue-700);  /* ★ */
+
+  --border-subtle:    var(--gray-200);
+  --border-default:   var(--gray-300);
+  --border-focus:     var(--blue-700); /* ★ */
+
+  /* ---------- text ----------
+   * on-white contrast noted for reference; see contrast matrix in the
+   * source doc before reusing a step in a new context.
+   * text-primary    gray-900  10.8:1
+   * text-secondary  gray-700   7.5:1
+   * text-tertiary   gray-500   4.2:1  — large text / captions only, fails AA body
+   * text-disabled   gray-400   2.9:1  — disabled labels only
+   * text-link       blue-700   4.5:1  — ★
+   */
+  --text-primary:     var(--gray-900);
+  --text-secondary:   var(--gray-700);
+  --text-tertiary:    var(--gray-500);
+  --text-disabled:    var(--gray-400);
+  --text-link:        var(--blue-700); /* ★ */
+
+  /* ---------- actions ----------
+   * NOTE: on inverse surfaces, primary steps up to blue-600 — the
+   * brand anchor at 700 is too dark against slate-950 to stay legible.
+   */
+  --action-primary-bg:        var(--blue-700);  /* ★ */
+  --action-primary-fg:        #FFFFFF;
+  --action-primary-bg-inverse: var(--blue-600);
+  --action-primary-fg-inverse: var(--slate-950);
+
+  --action-secondary-fg:      var(--slate-900);
+  --action-secondary-border:  var(--slate-800); /* ★ */
+
+  --action-tertiary-fg:       var(--slate-900);
+
+  --action-destructive-bg:    var(--red-600);
+  --action-destructive-fg:    #FFFFFF;
+
+  --action-disabled-bg:       var(--gray-100);
+  --action-disabled-fg:       var(--gray-300);
+
+  --input-border:              var(--gray-300);
+  --input-border-focus:        var(--blue-700); /* ★ */
+  --input-focus-ring:          rgba(1, 127, 172, 0.28);
+
+  /* ---------- status ----------
+   * Status text uses the 800 step on a 100 background, not 700 — at
+   * 700, green/amber pairings clear AA by only 0.01–0.05, no margin.
+   */
+  --status-success-bg: var(--green-100);
+  --status-success-fg: var(--green-800);
+  --status-warning-bg: var(--amber-100);
+  --status-warning-fg: var(--amber-800);
+  --status-error-bg:   var(--red-100);
+  --status-error-fg:   var(--red-800);
+  --status-info-bg:    var(--blue-100);
+  --status-info-fg:    var(--blue-800);
+
+  /* ---------- data visualization ----------
+   * Ordered so adjacent categories stay distinguishable. Starts on
+   * the brand anchor.
+   */
+  --chart-1: var(--blue-700);  /* ★ */
+  --chart-2: var(--amber-500);
+  --chart-3: var(--slate-500);
+  --chart-4: var(--green-600);
+  --chart-5: var(--red-500);
+  --chart-6: var(--blue-300);
+  --chart-7: var(--slate-800); /* ★ */
+  --chart-8: #949A9C;
+
+  /* ---------- shape ---------- */
+  --radius-control: 4px;
+  --radius-card:    8px;
+  --radius-pill:    999px;
+
+  /* ---------- elevation ----------
+   * Tinted with slate-950 rather than pure black, so elevation stays
+   * in the same cool family as the palette.
+   */
+  --elevation-card:     0 1px 2px rgba(26, 40, 55, 0.08);
+  --elevation-dropdown: 0 4px 12px rgba(26, 40, 55, 0.12);
+  --elevation-modal:    0 12px 32px rgba(26, 40, 55, 0.18);
+
+  /* ---------- spacing (4px base scale) ---------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* ---------- typography ---------- */
+  --font-role-display: var(--font-display); /* headings, section titles, KPI numerals */
+  --font-role-body:    var(--font-body);    /* body copy, UI labels, buttons */
+  --font-role-mono:    var(--font-mono);    /* data, hex values, code, token names */
+}
+
+/**
+ * ---------- dark (best-effort, unofficial) ----------
+ * zinc-ui-tokens.css ships light-only; Zinc has not published a dark
+ * semantic layer, only inverse-surface tokens meant for chrome on an
+ * otherwise-light product (surface-inverse, action-primary-*-inverse).
+ * This block reassigns the SAME semantic names for a full dark theme
+ * by walking the existing gray/slate/blue ladders in the direction
+ * the inverse tokens imply. No new token names are introduced here.
+ * Replace this block wholesale if/when Zinc publishes real dark tokens.
+ */
+html.dark {
+  --surface-page:     var(--slate-950);
+  --surface-subtle:   var(--slate-900);
+  --surface-sunken:   var(--gray-900);
+  --surface-inverse:  var(--gray-50);
+  --surface-brand:    var(--blue-400);
+
+  --border-subtle:    var(--gray-800);
+  --border-default:   var(--gray-700);
+  --border-focus:     var(--blue-400);
+
+  --text-primary:     var(--gray-50);
+  --text-secondary:   var(--gray-300);
+  --text-tertiary:    var(--gray-500);
+  --text-disabled:    var(--gray-600);
+  --text-link:        var(--blue-400);
+
+  --action-primary-bg:        var(--blue-600);
+  --action-primary-fg:        var(--slate-950);
+  --action-primary-bg-inverse: var(--blue-700);
+  --action-primary-fg-inverse: #FFFFFF;
+
+  --action-secondary-fg:      var(--gray-50);
+  --action-secondary-border:  var(--gray-500);
+
+  --action-tertiary-fg:       var(--gray-50);
+
+  --action-destructive-bg:    var(--red-500);
+  --action-destructive-fg:    var(--slate-950);
+
+  --action-disabled-bg:       var(--gray-800);
+  --action-disabled-fg:       var(--gray-600);
+
+  --input-border:              var(--gray-700);
+  --input-border-focus:        var(--blue-400);
+  --input-focus-ring:          rgba(54, 208, 250, 0.28);
+
+  --status-success-bg: var(--green-950);
+  --status-success-fg: var(--green-300);
+  --status-warning-bg: var(--amber-950);
+  --status-warning-fg: var(--amber-300);
+  --status-error-bg:   var(--red-950);
+  --status-error-fg:   var(--red-300);
+  --status-info-bg:    var(--blue-950);
+  --status-info-fg:    var(--blue-300);
+}
