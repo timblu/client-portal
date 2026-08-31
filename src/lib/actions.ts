@@ -7,7 +7,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { canAccessProject, canApproveProject } from "@/lib/access";
 import {
   assertCanManageMembers,
-  isLastCompanyAdmin,
+  assertLastAdminMutation,
   revalidateMemberPaths,
   requireActiveCompanyMember,
 } from "@/lib/members";
@@ -148,10 +148,7 @@ export async function demoteToMember(formData: FormData): Promise<{ projectCount
   const confirmedLastAdmin = formData.get("confirmedLastAdmin") === "true";
   await assertCanManageMembers(user, companyId);
   await requireActiveCompanyMember(memberId, companyId);
-
-  if ((await isLastCompanyAdmin(companyId, memberId)) && !confirmedLastAdmin) {
-    throw new Error("Confirm demoting the last Company Admin.");
-  }
+  await assertLastAdminMutation(user, companyId, memberId, confirmedLastAdmin);
 
   const projects = await db.project.findMany({ where: { companyId }, select: { id: true } });
   await db.$transaction(async (tx) => {
@@ -231,10 +228,7 @@ export async function removeMemberFromCompany(formData: FormData) {
   const confirmedLastAdmin = formData.get("confirmedLastAdmin") === "true";
   await assertCanManageMembers(user, companyId);
   await requireActiveCompanyMember(memberId, companyId);
-
-  if ((await isLastCompanyAdmin(companyId, memberId)) && !confirmedLastAdmin) {
-    throw new Error("Confirm removing the last Company Admin.");
-  }
+  await assertLastAdminMutation(user, companyId, memberId, confirmedLastAdmin);
 
   await db.$transaction([
     db.projectMembership.deleteMany({ where: { userId: memberId } }),
@@ -244,7 +238,10 @@ export async function removeMemberFromCompany(formData: FormData) {
     }),
   ]);
   revalidateMemberPaths(companyId, memberId);
-  redirect(`/staff/companies/${companyId}/members`);
+  if (user.role === "STAFF") {
+    redirect(`/staff/companies/${companyId}/members`);
+  }
+  redirect("/client/members");
 }
 
 export async function createProject(formData: FormData) {
