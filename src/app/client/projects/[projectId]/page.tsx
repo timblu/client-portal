@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireClient } from "@/lib/guards";
+import { canAccessProject } from "@/lib/access";
 import { db } from "@/lib/db";
 import { DecisionBadge } from "@/components/DecisionBadge";
 import { PageShell, ListHead } from "@/components/PageShell";
@@ -22,7 +23,7 @@ export default async function ClientProjectPage({
       },
     },
   });
-  if (!project || project.companyId !== user.companyId) notFound();
+  if (!project || !(await canAccessProject(user, project))) notFound();
 
   const waitingOnYou = project.deliverables.filter(
     (d) => (d.versions[0]?.decisionState ?? "PENDING") === "PENDING"

@@ -27,7 +27,11 @@ export async function listSwitchTargets(): Promise<SwitchTarget[]> {
     id: user.id,
     name: user.name,
     roleLabel:
-      user.role === "STAFF" ? "staff" : user.isApprover ? "approver" : "reviewer",
+      user.role === "STAFF"
+        ? "staff"
+        : user.companyRole === "COMPANY_ADMIN"
+          ? "company admin"
+          : "member",
     companyName: user.company?.name ?? null,
   }));
 }

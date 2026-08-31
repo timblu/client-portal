@@ -8,7 +8,7 @@ export default async function ClientLayout({ children }: { children: React.React
     <div className="flex min-h-screen flex-col overflow-hidden">
       <TopNav
         homeHref="/client"
-        roleLabel={user.isApprover ? "approver" : "reviewer"}
+        roleLabel={user.companyRole === "COMPANY_ADMIN" ? "company admin" : "member"}
         userName={user.name}
         currentUserId={user.id}
       />

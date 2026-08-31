@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { toggleApprover } from "@/lib/actions";
+import { accessSummaryLabel } from "@/lib/access";
 import { PageShell, ListHead } from "@/components/PageShell";
 import { CompanyLogo } from "@/components/CompanyLogo";
 
@@ -14,7 +14,13 @@ export default async function StaffCompanyPage({
   const company = await db.company.findUnique({
     where: { id: companyId },
     include: {
-      members: { orderBy: { createdAt: "asc" } },
+      members: {
+        where: { removedAt: null },
+        orderBy: { createdAt: "asc" },
+        include: {
+          projectMemberships: { include: { project: true } },
+        },
+      },
       projects: {
         include: { deliverables: true },
         orderBy: { createdAt: "asc" },
@@ -79,20 +85,14 @@ export default async function StaffCompanyPage({
           Members
         </h2>
         <div className="wf-list">
-          <ListHead left="Name" right="Role" />
+          <ListHead left="Name" right="Access" />
           {company.members.map((member) => (
             <div key={member.id} className="wf-row flex items-center justify-between py-3.5">
               <div>
                 <p className="text-sm font-medium">{member.name}</p>
                 <p className="mt-0.5 text-xs text-[var(--text-secondary)]">{member.email}</p>
               </div>
-              <form action={toggleApprover}>
-                <input type="hidden" name="memberId" value={member.id} />
-                <input type="hidden" name="companyId" value={company.id} />
-                <button type="submit" className="wf-tag hover:underline">
-                  {member.isApprover ? "Approver" : "Comment only"}
-                </button>
-              </form>
+              <span className="wf-tag">{accessSummaryLabel(member)}</span>
             </div>
           ))}
           {company.members.length === 0 ? (

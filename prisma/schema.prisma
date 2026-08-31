@@ -40,6 +40,16 @@ enum BlockerStatus {
   RESOLVED
 }
 
+enum CompanyRole {
+  MEMBER
+  COMPANY_ADMIN
+}
+
+enum ProjectRole {
+  REVIEWER
+  APPROVER
+}
+
 // Account-shaped: an isolated client tenant.
 model Company {
   id        String    @id @default(cuid())
@@ -52,22 +62,25 @@ model Company {
 
 // Contact-shaped for client members; also holds staff users (companyId null).
 model User {
-  id         String   @id @default(cuid())
-  email      String   @unique
-  name       String
-  role       Role
-  isApprover Boolean  @default(false)
-  companyId  String?
-  company    Company? @relation(fields: [companyId], references: [id])
-  createdAt  DateTime @default(now())
+  id          String       @id @default(cuid())
+  email       String       @unique
+  name        String
+  role        Role
+  isApprover  Boolean      @default(false)
+  companyRole CompanyRole?
+  removedAt   DateTime?
+  companyId   String?
+  company     Company?     @relation(fields: [companyId], references: [id])
+  createdAt   DateTime     @default(now())
 
-  sessions        Session[]
-  magicLinks      MagicLink[]
-  comments        Comment[]
-  blockerComments BlockerComment[]
-  decidedVersions Version[]        @relation("VersionDecidedBy")
-  ownedBlockers   Blocker[]        @relation("BlockerOwner")
-  notifications   Notification[]
+  sessions           Session[]
+  magicLinks         MagicLink[]
+  comments           Comment[]
+  blockerComments    BlockerComment[]
+  decidedVersions    Version[]            @relation("VersionDecidedBy")
+  ownedBlockers      Blocker[]            @relation("BlockerOwner")
+  notifications      Notification[]
+  projectMemberships ProjectMembership[]
 }
 
 model MagicLink {
@@ -106,6 +119,17 @@ model Project {
 
   deliverables Deliverable[]
   blockers     Blocker[]
+  memberships  ProjectMembership[]
+}
+
+model ProjectMembership {
+  userId    String
+  projectId String
+  role      ProjectRole
+  user      User        @relation(fields: [userId], references: [id])
+  project   Project     @relation(fields: [projectId], references: [id])
+
+  @@id([userId, projectId])
 }
 
 model Deliverable {

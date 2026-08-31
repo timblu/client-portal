@@ -34,6 +34,7 @@ async function main() {
   await db.commentThread.deleteMany();
   await db.version.deleteMany();
   await db.deliverable.deleteMany();
+  await db.projectMembership.deleteMany();
   await db.project.deleteMany();
   await db.phase.deleteMany();
   await db.session.deleteMany();
@@ -56,7 +57,7 @@ async function main() {
       email: "casey@northwind.test",
       name: "Casey Morgan",
       role: "CLIENT",
-      isApprover: true,
+      companyRole: "MEMBER",
       companyId: northwind.id,
     },
   });
@@ -65,7 +66,7 @@ async function main() {
       email: "priya@northwind.test",
       name: "Priya Nair",
       role: "CLIENT",
-      isApprover: false,
+      companyRole: "MEMBER",
       companyId: northwind.id,
     },
   });
@@ -74,6 +75,13 @@ async function main() {
     data: { name: "Storefront Redesign", companyId: northwind.id },
   });
   await db.project.create({ data: { name: "Loyalty Program", companyId: northwind.id } });
+
+  await db.projectMembership.create({
+    data: { userId: casey.id, projectId: storefront.id, role: "APPROVER" },
+  });
+  await db.projectMembership.create({
+    data: { userId: priya.id, projectId: storefront.id, role: "REVIEWER" },
+  });
 
   const homepage = await db.deliverable.create({
     data: {
@@ -165,13 +173,16 @@ async function main() {
       email: "devon@alpine.test",
       name: "Devon Blake",
       role: "CLIENT",
-      isApprover: true,
+      companyRole: "MEMBER",
       companyId: alpine.id,
     },
   });
 
   const memberPortal = await db.project.create({
     data: { name: "Member Portal", companyId: alpine.id },
+  });
+  await db.projectMembership.create({
+    data: { userId: devon.id, projectId: memberPortal.id, role: "APPROVER" },
   });
 
   const dashboardDeliverable = await db.deliverable.create({
@@ -212,8 +223,8 @@ async function main() {
 
   console.log("Seed complete.");
   console.log("Staff:      sam@agency.test");
-  console.log("Northwind:  casey@northwind.test (approver), priya@northwind.test");
-  console.log("Alpine:     devon@alpine.test (approver)");
+  console.log("Northwind:  casey@northwind.test (Approver on Storefront), priya@northwind.test (Reviewer on Storefront)");
+  console.log("Alpine:     devon@alpine.test (Approver on Member Portal)");
 }
 
 main()

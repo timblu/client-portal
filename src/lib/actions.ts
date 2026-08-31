@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { canAccessProject, canApproveProject } from "@/lib/access";
 import { notifyAllStaff, notifyCompany } from "@/lib/notifications";
 
 async function requireUser() {
@@ -33,28 +34,14 @@ export async function inviteMember(formData: FormData) {
   const companyId = String(formData.get("companyId") ?? "");
   const email = String(formData.get("email") ?? "").toLowerCase().trim();
   const name = String(formData.get("name") ?? "").trim();
-  const isApprover = formData.get("isApprover") === "on";
   if (!companyId || !email || !name) return;
 
   await db.user.upsert({
     where: { email },
-    update: { companyId, name, isApprover },
-    create: { email, name, role: "CLIENT", isApprover, companyId },
+    update: { companyId, name, companyRole: "MEMBER" },
+    create: { email, name, role: "CLIENT", companyRole: "MEMBER", companyId },
   });
 
-  revalidatePath(`/staff/companies/${companyId}`);
-}
-
-export async function toggleApprover(formData: FormData) {
-  const user = await requireUser();
-  if (user.role !== "STAFF") throw new Error("Only staff can change approver status.");
-
-  const memberId = String(formData.get("memberId") ?? "");
-  const companyId = String(formData.get("companyId") ?? "");
-  const member = await db.user.findUnique({ where: { id: memberId } });
-  if (!member) return;
-
-  await db.user.update({ where: { id: memberId }, data: { isApprover: !member.isApprover } });
   revalidatePath(`/staff/companies/${companyId}`);
 }
 
@@ -169,9 +156,35 @@ export async function addVersion(formData: FormData) {
 
 // ---------- Comments (shared by staff & client) ----------
 
+async function requireProjectAccessForVersion(user: Awaited<ReturnType<typeof requireUser>>, versionId: string) {
+  const version = await db.version.findUnique({
+    where: { id: versionId },
+    include: { deliverable: { include: { project: true } } },
+  });
+  if (!version) throw new Error("Version not found.");
+  if (!(await canAccessProject(user, version.deliverable.project))) {
+    throw new Error("You cannot access this project.");
+  }
+  return version;
+}
+
+async function requireProjectAccessForThread(user: Awaited<ReturnType<typeof requireUser>>, threadId: string) {
+  const thread = await db.commentThread.findUnique({
+    where: { id: threadId },
+    include: { version: { include: { deliverable: { include: { project: true } } } } },
+  });
+  if (!thread) throw new Error("Thread not found.");
+  if (!(await canAccessProject(user, thread.version.deliverable.project))) {
+    throw new Error("You cannot access this project.");
+  }
+  return thread;
+}
+
 export async function addThread(versionId: string, xPct: number, yPct: number, body: string) {
   const user = await requireUser();
   if (!body.trim()) return;
+
+  const version = await requireProjectAccessForVersion(user, versionId);
 
   const thread = await db.commentThread.create({
     data: { versionId, xPct, yPct },
@@ -180,11 +193,7 @@ export async function addThread(versionId: string, xPct: number, yPct: number, b
     data: { threadId: thread.id, authorId: user.id, body: body.trim() },
   });
 
-  const version = await db.version.findUnique({
-    where: { id: versionId },
-    include: { deliverable: true },
-  });
-  if (version && user.role === "CLIENT") {
+  if (user.role === "CLIENT") {
     await notifyAllStaff(
       `New comment: ${version.deliverable.title}`,
       `${user.name} left a comment on v${version.versionNumber} of ${version.deliverable.title}.`
@@ -198,13 +207,10 @@ export async function addReply(threadId: string, body: string) {
   const user = await requireUser();
   if (!body.trim()) return;
 
+  const thread = await requireProjectAccessForThread(user, threadId);
   await db.comment.create({ data: { threadId, authorId: user.id, body: body.trim() } });
 
-  const thread = await db.commentThread.findUnique({
-    where: { id: threadId },
-    include: { version: { include: { deliverable: true } } },
-  });
-  if (thread && user.role === "CLIENT") {
+  if (user.role === "CLIENT") {
     await notifyAllStaff(
       `New reply: ${thread.version.deliverable.title}`,
       `${user.name} replied on a comment thread for ${thread.version.deliverable.title}.`
@@ -215,7 +221,8 @@ export async function addReply(threadId: string, body: string) {
 }
 
 export async function toggleThreadResolved(threadId: string, resolved: boolean) {
-  await requireUser();
+  const user = await requireUser();
+  await requireProjectAccessForThread(user, threadId);
   const thread = await db.commentThread.update({
     where: { id: threadId },
     data: { resolved },
@@ -226,7 +233,8 @@ export async function toggleThreadResolved(threadId: string, resolved: boolean) 
 }
 
 export async function toggleThreadPinned(threadId: string, pinned: boolean) {
-  await requireUser();
+  const user = await requireUser();
+  await requireProjectAccessForThread(user, threadId);
   const thread = await db.commentThread.update({
     where: { id: threadId },
     data: { pinnedToTop: pinned },
@@ -244,7 +252,12 @@ export async function submitDecision(
   comment: string
 ) {
   const user = await requireUser();
-  if (user.role !== "CLIENT" || !user.isApprover) {
+  const existing = await db.version.findUnique({
+    where: { id: versionId },
+    include: { deliverable: { include: { project: true } } },
+  });
+  if (!existing) throw new Error("Version not found.");
+  if (!(await canApproveProject(user, existing.deliverable.project))) {
     throw new Error("Only an approver can record a decision.");
   }
   if (decisionState !== "APPROVED" && !comment.trim()) {
