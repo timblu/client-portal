@@ -34,3 +34,8 @@ export function initials(name: string) {
     .slice(0, 2)
     .toUpperCase();
 }
+
+export function attributedName(person: { name: string; removedAt?: Date | string | null } | null | undefined) {
+  if (!person) return null;
+  return person.removedAt ? `${person.name} (removed)` : person.name;
+}

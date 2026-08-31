@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { accessSummaryLabel } from "@/lib/access";
 import { PageShell, ListHead } from "@/components/PageShell";
 import { CompanyLogo } from "@/components/CompanyLogo";
+import { AccessSummaryTag } from "@/components/members/AccessSummaryTag";
+import { toDirectoryMember } from "@/components/members/serialize";
+
+const PREVIEW_LIMIT = 6;
 
 export default async function StaffCompanyPage({
   params,
@@ -16,7 +19,7 @@ export default async function StaffCompanyPage({
     include: {
       members: {
         where: { removedAt: null },
-        orderBy: { createdAt: "asc" },
+        orderBy: { name: "asc" },
         include: {
           projectMemberships: { include: { project: true } },
         },
@@ -28,6 +31,8 @@ export default async function StaffCompanyPage({
     },
   });
   if (!company) notFound();
+
+  const preview = company.members.slice(0, PREVIEW_LIMIT);
 
   return (
     <PageShell>
@@ -47,9 +52,9 @@ export default async function StaffCompanyPage({
             <button type="button" className="wf-btn">
               New project
             </button>
-            <button type="button" className="wf-btn-solid">
+            <Link href={`/staff/companies/${company.id}/members`} className="wf-btn-solid">
               Invite member
-            </button>
+            </Link>
           </div>
         </div>
       </div>
@@ -81,19 +86,29 @@ export default async function StaffCompanyPage({
       </section>
 
       <section>
-        <h2 className="mb-3 text-[0.6875rem] font-medium uppercase tracking-[0.04em] text-[var(--text-secondary)]">
-          Members
-        </h2>
+        <div className="mb-3 flex items-baseline justify-between gap-3">
+          <h2 className="text-[0.6875rem] font-medium uppercase tracking-[0.04em] text-[var(--text-secondary)]">
+            Members
+          </h2>
+          <Link href={`/staff/companies/${company.id}/members`} className="wf-link-muted">
+            Open directory
+            {company.members.length > 0 ? ` · ${company.members.length}` : ""}
+          </Link>
+        </div>
         <div className="wf-list">
           <ListHead left="Name" right="Access" />
-          {company.members.map((member) => (
-            <div key={member.id} className="wf-row flex items-center justify-between py-3.5">
+          {preview.map((member) => (
+            <Link
+              key={member.id}
+              href={`/staff/companies/${company.id}/members/${member.id}`}
+              className="wf-row flex items-center justify-between py-3.5 hover:bg-[var(--surface-sunken)]"
+            >
               <div>
                 <p className="text-sm font-medium">{member.name}</p>
                 <p className="mt-0.5 text-xs text-[var(--text-secondary)]">{member.email}</p>
               </div>
-              <span className="wf-tag">{accessSummaryLabel(member)}</span>
-            </div>
+              <AccessSummaryTag member={toDirectoryMember(member)} />
+            </Link>
           ))}
           {company.members.length === 0 ? (
             <p className="py-8 text-sm text-[var(--text-secondary)]">No members invited yet.</p>
