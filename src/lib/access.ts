@@ -51,24 +51,3 @@ export function visibleProjectsWhere(user: AccessUser): Prisma.ProjectWhereInput
     memberships: { some: { userId: user.id } },
   };
 }
-
-export function accessSummaryLabel(
-  member: {
-    companyRole: CompanyRole | null;
-    projectMemberships: { role: "REVIEWER" | "APPROVER"; project: { name: string; createdAt: Date } }[];
-  }
-): string {
-  if (member.companyRole === "COMPANY_ADMIN") return "Company Admin · all projects";
-
-  const assigned = [...member.projectMemberships].sort(
-    (a, b) => a.project.createdAt.getTime() - b.project.createdAt.getTime()
-  );
-  if (assigned.length === 0) return "No project access";
-
-  const phrase = (m: (typeof assigned)[number]) =>
-    `${m.role === "APPROVER" ? "Approver" : "Reviewer"} on ${m.project.name}`;
-
-  if (assigned.length === 1) return phrase(assigned[0]);
-  if (assigned.length === 2) return `${phrase(assigned[0])} · ${phrase(assigned[1])}`;
-  return `${phrase(assigned[0])} · +${assigned.length - 1} more`;
-}

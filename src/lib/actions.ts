@@ -27,22 +27,88 @@ export async function createCompany(formData: FormData) {
   redirect(`/staff/companies/${company.id}`);
 }
 
-export async function inviteMember(formData: FormData) {
+export async function inviteMember(formData: FormData): Promise<{ error?: string } | void> {
   const user = await requireUser();
   if (user.role !== "STAFF") throw new Error("Only staff can invite members.");
 
   const companyId = String(formData.get("companyId") ?? "");
   const email = String(formData.get("email") ?? "").toLowerCase().trim();
   const name = String(formData.get("name") ?? "").trim();
-  if (!companyId || !email || !name) return;
+  const companyRole = String(formData.get("companyRole") ?? "MEMBER");
+  if (!companyId || !email || !name) return { error: "Name and email are required." };
+  if (companyRole !== "MEMBER" && companyRole !== "COMPANY_ADMIN") {
+    return { error: "Invalid company role." };
+  }
 
-  await db.user.upsert({
-    where: { email },
-    update: { companyId, name, companyRole: "MEMBER" },
-    create: { email, name, role: "CLIENT", companyRole: "MEMBER", companyId },
+  let memberships: { projectId: string; role: "REVIEWER" | "APPROVER" }[] = [];
+  try {
+    const parsed = JSON.parse(String(formData.get("memberships") ?? "[]")) as {
+      projectId: string;
+      role: "REVIEWER" | "APPROVER";
+    }[];
+    memberships = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return { error: "Invalid project access." };
+  }
+
+  const company = await db.company.findUnique({
+    where: { id: companyId },
+    include: { projects: { select: { id: true } } },
   });
+  if (!company) return { error: "Company not found." };
+
+  if (companyRole === "MEMBER") {
+    if (memberships.length === 0) return { error: "Select at least one project." };
+    const validIds = new Set(company.projects.map((p) => p.id));
+    for (const membership of memberships) {
+      if (!validIds.has(membership.projectId)) {
+        return { error: "Choose projects that belong to this company." };
+      }
+      if (membership.role !== "REVIEWER" && membership.role !== "APPROVER") {
+        return { error: "Invalid project role." };
+      }
+    }
+  }
+
+  const existing = await db.user.findUnique({ where: { email } });
+  if (existing) {
+    if (existing.role === "STAFF") return { error: "That email belongs to a staff account." };
+    if (existing.companyId && existing.companyId !== companyId) {
+      return { error: "That email belongs to another company." };
+    }
+    if (existing.companyId === companyId && !existing.removedAt) {
+      return { error: "That person is already a member." };
+    }
+  }
+
+  const member = existing
+    ? await db.user.update({
+        where: { id: existing.id },
+        data: {
+          name,
+          role: "CLIENT",
+          companyId,
+          companyRole,
+          removedAt: null,
+        },
+      })
+    : await db.user.create({
+        data: { email, name, role: "CLIENT", companyId, companyRole },
+      });
+
+  await db.projectMembership.deleteMany({ where: { userId: member.id } });
+  if (companyRole === "MEMBER") {
+    await db.projectMembership.createMany({
+      data: memberships.map((m) => ({
+        userId: member.id,
+        projectId: m.projectId,
+        role: m.role,
+      })),
+    });
+  }
 
   revalidatePath(`/staff/companies/${companyId}`);
+  revalidatePath(`/staff/companies/${companyId}/members`);
 }
 
 export async function createProject(formData: FormData) {
