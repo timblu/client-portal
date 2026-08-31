@@ -1,10 +1,26 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import type { AccessUser } from "@/lib/access";
+import { isCompanyAdmin, type AccessUser } from "@/lib/access";
 
 export async function assertCanManageMembers(actor: AccessUser, companyId: string) {
   if (actor.role === "STAFF") return;
-  throw new Error("Only staff can manage members.");
+  if (isCompanyAdmin(actor) && actor.companyId === companyId) return;
+  throw new Error("You cannot manage members for this company.");
+}
+
+export async function assertLastAdminMutation(
+  actor: AccessUser,
+  companyId: string,
+  memberId: string,
+  confirmedLastAdmin: boolean
+) {
+  if (!(await isLastCompanyAdmin(companyId, memberId))) return;
+  if (actor.role !== "STAFF") {
+    throw new Error("Only Company Admin — can't be demoted or removed. Promote another Member first.");
+  }
+  if (!confirmedLastAdmin) {
+    throw new Error("Confirm this action on the last Company Admin.");
+  }
 }
 
 export async function isLastCompanyAdmin(companyId: string, memberId: string) {
@@ -33,4 +49,6 @@ export function revalidateMemberPaths(companyId: string, memberId?: string) {
   revalidatePath(`/staff/companies/${companyId}`);
   revalidatePath(`/staff/companies/${companyId}/members`);
   if (memberId) revalidatePath(`/staff/companies/${companyId}/members/${memberId}`);
+  revalidatePath("/client/members");
+  if (memberId) revalidatePath(`/client/members/${memberId}`);
 }

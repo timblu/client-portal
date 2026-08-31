@@ -1,4 +1,5 @@
 import { requireClient } from "@/lib/guards";
+import { isCompanyAdmin } from "@/lib/access";
 import { TopNav } from "@/components/TopNav";
 
 export default async function ClientLayout({ children }: { children: React.ReactNode }) {
@@ -11,6 +12,7 @@ export default async function ClientLayout({ children }: { children: React.React
         roleLabel={user.companyRole === "COMPANY_ADMIN" ? "company admin" : "member"}
         userName={user.name}
         currentUserId={user.id}
+        navLinks={isCompanyAdmin(user) ? [{ href: "/client/members", label: "Members" }] : []}
       />
       <main className="flex min-h-0 flex-1 flex-col">{children}</main>
     </div>

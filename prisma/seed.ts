@@ -70,6 +70,15 @@ async function main() {
       companyId: northwind.id,
     },
   });
+  await db.user.create({
+    data: {
+      email: "alex@northwind.test",
+      name: "Alex Chen",
+      role: "CLIENT",
+      companyRole: "COMPANY_ADMIN",
+      companyId: northwind.id,
+    },
+  });
 
   const storefront = await db.project.create({
     data: { name: "Storefront Redesign", companyId: northwind.id },
@@ -223,7 +232,7 @@ async function main() {
 
   console.log("Seed complete.");
   console.log("Staff:      sam@agency.test");
-  console.log("Northwind:  casey@northwind.test (Approver on Storefront), priya@northwind.test (Reviewer on Storefront)");
+  console.log("Northwind:  alex@northwind.test (Company Admin), casey@northwind.test (Approver on Storefront), priya@northwind.test (Reviewer on Storefront)");
   console.log("Alpine:     devon@alpine.test (Approver on Member Portal)");
 }
 
