@@ -26,6 +26,21 @@ export async function createMagicLink(email: string) {
   return { token, user };
 }
 
+export async function createSession(userId: string) {
+  const sessionToken = generateToken();
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+
+  await db.session.create({ data: { token: sessionToken, userId, expiresAt } });
+
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE, sessionToken, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    expires: expiresAt,
+  });
+}
+
 export async function consumeMagicLink(token: string) {
   const link = await db.magicLink.findUnique({ where: { token }, include: { user: true } });
   if (!link) return { error: "This link is invalid." as const };
@@ -33,23 +48,7 @@ export async function consumeMagicLink(token: string) {
   if (link.expiresAt < new Date()) return { error: "This link has expired." as const };
 
   await db.magicLink.update({ where: { id: link.id }, data: { usedAt: new Date() } });
-
-  const sessionToken = generateToken();
-  await db.session.create({
-    data: {
-      token: sessionToken,
-      userId: link.userId,
-      expiresAt: new Date(Date.now() + SESSION_TTL_MS),
-    },
-  });
-
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, sessionToken, {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    expires: new Date(Date.now() + SESSION_TTL_MS),
-  });
+  await createSession(link.userId);
 
   return { user: link.user };
 }

@@ -48,7 +48,9 @@ async function main() {
     data: { email: "jordan@agency.test", name: "Jordan Lee", role: "STAFF" },
   });
 
-  const northwind = await db.company.create({ data: { name: "Northwind Retail" } });
+  const northwind = await db.company.create({
+    data: { name: "Northwind Retail", logoUrl: "/seed/northwind-logo.svg" },
+  });
   const casey = await db.user.create({
     data: {
       email: "casey@northwind.test",
@@ -155,7 +157,9 @@ async function main() {
     },
   });
 
-  const alpine = await db.company.create({ data: { name: "Alpine Outfitters" } });
+  const alpine = await db.company.create({
+    data: { name: "Alpine Outfitters", logoUrl: "/seed/alpine-logo.svg" },
+  });
   const devon = await db.user.create({
     data: {
       email: "devon@alpine.test",

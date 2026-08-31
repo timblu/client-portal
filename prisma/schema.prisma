@@ -44,6 +44,7 @@ enum BlockerStatus {
 model Company {
   id        String    @id @default(cuid())
   name      String
+  logoUrl   String?
   createdAt DateTime  @default(now())
   members   User[]
   projects  Project[]

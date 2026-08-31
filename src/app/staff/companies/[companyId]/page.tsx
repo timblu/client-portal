@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { createProject, inviteMember, toggleApprover } from "@/lib/actions";
+import { toggleApprover } from "@/lib/actions";
 import { PageShell, ListHead } from "@/components/PageShell";
+import { CompanyLogo } from "@/components/CompanyLogo";
 
 export default async function StaffCompanyPage({
   params,
@@ -31,7 +32,20 @@ export default async function StaffCompanyPage({
         >
           Companies
         </Link>
-        <h1 className="mt-2 text-[1.75rem] font-semibold tracking-tight">{company.name}</h1>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+          <div className="flex items-center gap-3">
+            <CompanyLogo name={company.name} logoUrl={company.logoUrl} />
+            <h1 className="text-[1.75rem] font-semibold tracking-tight">{company.name}</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" className="wf-btn">
+              New project
+            </button>
+            <button type="button" className="wf-btn-solid">
+              Invite member
+            </button>
+          </div>
+        </div>
       </div>
 
       <section className="mb-12">
@@ -58,13 +72,6 @@ export default async function StaffCompanyPage({
             <p className="py-8 text-sm text-[var(--text-secondary)]">No projects yet.</p>
           ) : null}
         </div>
-        <form action={createProject} className="mt-4 flex max-w-sm gap-2">
-          <input type="hidden" name="companyId" value={company.id} />
-          <input name="name" placeholder="New project name" required className="wf-input flex-1" />
-          <button type="submit" className="wf-btn">
-            Add
-          </button>
-        </form>
       </section>
 
       <section>
@@ -92,29 +99,6 @@ export default async function StaffCompanyPage({
             <p className="py-8 text-sm text-[var(--text-secondary)]">No members invited yet.</p>
           ) : null}
         </div>
-
-        <form action={inviteMember} className="mt-6 flex flex-wrap items-end gap-3">
-          <input type="hidden" name="companyId" value={company.id} />
-          <div>
-            <label className="mb-1.5 block text-[0.6875rem] uppercase tracking-[0.04em] text-[var(--text-secondary)]">
-              Name
-            </label>
-            <input name="name" required className="wf-input" />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-[0.6875rem] uppercase tracking-[0.04em] text-[var(--text-secondary)]">
-              Email
-            </label>
-            <input name="email" type="email" required className="wf-input" />
-          </div>
-          <label className="flex items-center gap-1.5 pb-2 text-xs text-[var(--text-secondary)]">
-            <input type="checkbox" name="isApprover" />
-            Approver
-          </label>
-          <button type="submit" className="wf-btn-solid">
-            Invite
-          </button>
-        </form>
       </section>
     </PageShell>
   );

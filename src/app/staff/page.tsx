@@ -27,6 +27,7 @@ export default async function StaffHome() {
             id: company.id,
             href: `/staff/companies/${company.id}`,
             name: company.name,
+            logoUrl: company.logoUrl,
             note: pending > 0 ? "Needs revision" : undefined,
             updated: formatDate(company.createdAt),
           };

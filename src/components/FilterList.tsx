@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { CompanyLogo } from "@/components/CompanyLogo";
 import { ListHead } from "@/components/PageShell";
 
 export function FilterList({
@@ -9,7 +10,7 @@ export function FilterList({
   rows,
 }: {
   placeholder: string;
-  rows: { id: string; href: string; name: string; note?: string; updated: string }[];
+  rows: { id: string; href: string; name: string; note?: string; updated: string; logoUrl?: string | null }[];
 }) {
   const [q, setQ] = useState("");
   const filtered = useMemo(() => {
@@ -35,13 +36,16 @@ export function FilterList({
           <Link
             key={row.id}
             href={row.href}
-            className="wf-row flex items-center justify-between py-2.5 hover:bg-[var(--surface-sunken)]"
+            className="wf-row flex items-center justify-between gap-4 py-2.5 hover:bg-[var(--surface-sunken)]"
           >
-            <p className="text-sm font-medium">
-              {row.name}
-              {row.note ? <span className="ml-2 font-normal text-[var(--text-secondary)]">{row.note}</span> : null}
-            </p>
-            <span className="text-sm text-[var(--text-secondary)]">{row.updated}</span>
+            <div className="flex min-w-0 items-center gap-3">
+              <CompanyLogo name={row.name} logoUrl={row.logoUrl} size="sm" />
+              <p className="text-sm font-medium">
+                {row.name}
+                {row.note ? <span className="ml-2 font-normal text-[var(--text-secondary)]">{row.note}</span> : null}
+              </p>
+            </div>
+            <span className="shrink-0 text-sm text-[var(--text-secondary)]">{row.updated}</span>
           </Link>
         ))}
         {filtered.length === 0 ? (

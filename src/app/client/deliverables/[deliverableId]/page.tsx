@@ -77,11 +77,6 @@ export default async function ClientDeliverablePage({
         currentUser={{ id: user.id, name: user.name, role: "CLIENT", isApprover: user.isApprover }}
         basePath="/client"
         crumb={{ href: `/client/projects/${deliverable.project.id}`, label: deliverable.project.name }}
-        chrome={{
-          homeHref: "/client",
-          userName: user.name,
-          roleLabel: user.isApprover ? "approver" : "reviewer",
-        }}
         siblings={siblingDeliverables.map((d) => ({
           id: d.id,
           title: d.title,
