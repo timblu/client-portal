@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireClient } from "@/lib/guards";
+import { canAccessProject, canApproveProject } from "@/lib/access";
 import { DeliverableViewer } from "@/components/DeliverableViewer";
 
 export default async function ClientDeliverablePage({
@@ -27,7 +28,7 @@ export default async function ClientDeliverablePage({
       },
     },
   });
-  if (!deliverable || deliverable.project.companyId !== user.companyId) notFound();
+  if (!deliverable || !(await canAccessProject(user, deliverable.project))) notFound();
 
   const active =
     deliverable.versions.find((v) => v.id === versionParam) ?? deliverable.versions[0];
@@ -74,7 +75,12 @@ export default async function ClientDeliverablePage({
             })),
           })),
         }}
-        currentUser={{ id: user.id, name: user.name, role: "CLIENT", isApprover: user.isApprover }}
+        currentUser={{
+          id: user.id,
+          name: user.name,
+          role: "CLIENT",
+          canDecide: await canApproveProject(user, deliverable.project),
+        }}
         basePath="/client"
         crumb={{ href: `/client/projects/${deliverable.project.id}`, label: deliverable.project.name }}
         siblings={siblingDeliverables.map((d) => ({

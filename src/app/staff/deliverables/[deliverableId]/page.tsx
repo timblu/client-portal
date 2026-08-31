@@ -75,7 +75,7 @@ export default async function StaffDeliverablePage({
             })),
           })),
         }}
-        currentUser={{ id: user.id, name: user.name, role: "STAFF", isApprover: false }}
+        currentUser={{ id: user.id, name: user.name, role: "STAFF", canDecide: false }}
         basePath="/staff"
         crumb={{ href: `/staff/projects/${deliverable.project.id}`, label: deliverable.project.name }}
         siblings={siblingDeliverables.map((d) => ({

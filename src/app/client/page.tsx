@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireClient } from "@/lib/guards";
+import { visibleProjectsWhere } from "@/lib/access";
 import { db } from "@/lib/db";
 import { PageHeader, PageShell, ListHead } from "@/components/PageShell";
 
@@ -15,7 +16,7 @@ export default async function ClientHome() {
   }
 
   const projects = await db.project.findMany({
-    where: { companyId: user.companyId },
+    where: visibleProjectsWhere(user),
     include: { deliverables: { include: { versions: true } } },
     orderBy: { createdAt: "asc" },
   });

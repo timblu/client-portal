@@ -45,7 +45,7 @@ type ActiveVersion = {
   threads: Thread[];
 };
 
-type CurrentUser = { id: string; name: string; role: "STAFF" | "CLIENT"; isApprover: boolean };
+type CurrentUser = { id: string; name: string; role: "STAFF" | "CLIENT"; canDecide: boolean };
 
 type SiblingDeliverable = {
   id: string;
@@ -91,7 +91,7 @@ export function DeliverableViewer({
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
 
   const openThreadCount = activeVersion.threads.filter((t) => !t.resolved).length;
-  const isApprover = currentUser.role === "CLIENT" && currentUser.isApprover;
+  const canDecide = currentUser.canDecide;
   const isPrototype = activeVersion.kind === "PROTOTYPE_URL";
   const canPin = !isPrototype || mode === "comment";
 
@@ -213,7 +213,7 @@ export function DeliverableViewer({
 
         <div className="flex items-center gap-2">
           <DecisionBadge state={activeVersion.decisionState} />
-          {isApprover ? (
+          {canDecide ? (
             <div className="flex gap-2">
               <button className="wf-btn" onClick={() => setDecisionAction("CHANGES_REQUESTED")}>
                 Request changes

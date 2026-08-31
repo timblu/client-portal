@@ -29,9 +29,9 @@ Open http://localhost:3000/login. Demo accounts (all invite-only, sign in via ma
 | Email | Role |
 |---|---|
 | `sam@agency.test` | Staff (sees every company) |
-| `casey@northwind.test` | Client, Approver — Northwind Retail |
-| `priya@northwind.test` | Client, comment-only — Northwind Retail |
-| `devon@alpine.test` | Client, Approver — Alpine Outfitters |
+| `casey@northwind.test` | Client, Member — Approver on Storefront (Northwind) |
+| `priya@northwind.test` | Client, Member — Reviewer on Storefront (Northwind) |
+| `devon@alpine.test` | Client, Member — Approver on Member Portal (Alpine) |
 
 ## Structure
 
