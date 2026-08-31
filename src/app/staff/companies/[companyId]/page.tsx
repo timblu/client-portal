@@ -98,13 +98,17 @@ export default async function StaffCompanyPage({
         <div className="wf-list">
           <ListHead left="Name" right="Access" />
           {preview.map((member) => (
-            <div key={member.id} className="wf-row flex items-center justify-between py-3.5">
+            <Link
+              key={member.id}
+              href={`/staff/companies/${company.id}/members/${member.id}`}
+              className="wf-row flex items-center justify-between py-3.5 hover:bg-[var(--surface-sunken)]"
+            >
               <div>
                 <p className="text-sm font-medium">{member.name}</p>
                 <p className="mt-0.5 text-xs text-[var(--text-secondary)]">{member.email}</p>
               </div>
               <AccessSummaryTag member={toDirectoryMember(member)} />
-            </div>
+            </Link>
           ))}
           {company.members.length === 0 ? (
             <p className="py-8 text-sm text-[var(--text-secondary)]">No members invited yet.</p>
