@@ -5,6 +5,12 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessProject, canApproveProject } from "@/lib/access";
+import {
+  assertCanManageMembers,
+  isLastCompanyAdmin,
+  revalidateMemberPaths,
+  requireActiveCompanyMember,
+} from "@/lib/members";
 import { notifyAllStaff, notifyCompany } from "@/lib/notifications";
 
 async function requireUser() {
@@ -29,9 +35,9 @@ export async function createCompany(formData: FormData) {
 
 export async function inviteMember(formData: FormData): Promise<{ error?: string } | void> {
   const user = await requireUser();
-  if (user.role !== "STAFF") throw new Error("Only staff can invite members.");
-
   const companyId = String(formData.get("companyId") ?? "");
+  if (!companyId) return { error: "Company is required." };
+  await assertCanManageMembers(user, companyId);
   const email = String(formData.get("email") ?? "").toLowerCase().trim();
   const name = String(formData.get("name") ?? "").trim();
   const companyRole = String(formData.get("companyRole") ?? "MEMBER");
@@ -107,8 +113,138 @@ export async function inviteMember(formData: FormData): Promise<{ error?: string
     });
   }
 
-  revalidatePath(`/staff/companies/${companyId}`);
-  revalidatePath(`/staff/companies/${companyId}/members`);
+  revalidateMemberPaths(companyId);
+}
+
+export async function updateMemberName(formData: FormData) {
+  const user = await requireUser();
+  const companyId = String(formData.get("companyId") ?? "");
+  const memberId = String(formData.get("memberId") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  await assertCanManageMembers(user, companyId);
+  if (!name) return;
+  await requireActiveCompanyMember(memberId, companyId);
+  await db.user.update({ where: { id: memberId }, data: { name } });
+  revalidateMemberPaths(companyId, memberId);
+}
+
+export async function promoteToCompanyAdmin(formData: FormData) {
+  const user = await requireUser();
+  const companyId = String(formData.get("companyId") ?? "");
+  const memberId = String(formData.get("memberId") ?? "");
+  await assertCanManageMembers(user, companyId);
+  await requireActiveCompanyMember(memberId, companyId);
+  await db.$transaction([
+    db.projectMembership.deleteMany({ where: { userId: memberId } }),
+    db.user.update({ where: { id: memberId }, data: { companyRole: "COMPANY_ADMIN" } }),
+  ]);
+  revalidateMemberPaths(companyId, memberId);
+}
+
+export async function demoteToMember(formData: FormData): Promise<{ projectCount: number }> {
+  const user = await requireUser();
+  const companyId = String(formData.get("companyId") ?? "");
+  const memberId = String(formData.get("memberId") ?? "");
+  const confirmedLastAdmin = formData.get("confirmedLastAdmin") === "true";
+  await assertCanManageMembers(user, companyId);
+  await requireActiveCompanyMember(memberId, companyId);
+
+  if ((await isLastCompanyAdmin(companyId, memberId)) && !confirmedLastAdmin) {
+    throw new Error("Confirm demoting the last Company Admin.");
+  }
+
+  const projects = await db.project.findMany({ where: { companyId }, select: { id: true } });
+  await db.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: memberId }, data: { companyRole: "MEMBER" } });
+    await tx.projectMembership.deleteMany({ where: { userId: memberId } });
+    if (projects.length > 0) {
+      await tx.projectMembership.createMany({
+        data: projects.map((project) => ({
+          userId: memberId,
+          projectId: project.id,
+          role: "REVIEWER" as const,
+        })),
+      });
+    }
+  });
+  revalidateMemberPaths(companyId, memberId);
+  return { projectCount: projects.length };
+}
+
+export async function addProjectAccess(formData: FormData) {
+  const user = await requireUser();
+  const companyId = String(formData.get("companyId") ?? "");
+  const memberId = String(formData.get("memberId") ?? "");
+  const projectId = String(formData.get("projectId") ?? "");
+  await assertCanManageMembers(user, companyId);
+  const member = await requireActiveCompanyMember(memberId, companyId);
+  if (member.companyRole === "COMPANY_ADMIN") {
+    throw new Error("Company Admin access is automatic.");
+  }
+  const project = await db.project.findFirst({ where: { id: projectId, companyId } });
+  if (!project) throw new Error("Project not found.");
+  await db.projectMembership.upsert({
+    where: { userId_projectId: { userId: memberId, projectId } },
+    update: {},
+    create: { userId: memberId, projectId, role: "REVIEWER" },
+  });
+  revalidateMemberPaths(companyId, memberId);
+}
+
+export async function removeProjectAccess(formData: FormData) {
+  const user = await requireUser();
+  const companyId = String(formData.get("companyId") ?? "");
+  const memberId = String(formData.get("memberId") ?? "");
+  const projectId = String(formData.get("projectId") ?? "");
+  await assertCanManageMembers(user, companyId);
+  const member = await requireActiveCompanyMember(memberId, companyId);
+  if (member.companyRole === "COMPANY_ADMIN") {
+    throw new Error("Company Admin access is automatic.");
+  }
+  await db.projectMembership.deleteMany({ where: { userId: memberId, projectId } });
+  revalidateMemberPaths(companyId, memberId);
+}
+
+export async function changeProjectRole(formData: FormData) {
+  const user = await requireUser();
+  const companyId = String(formData.get("companyId") ?? "");
+  const memberId = String(formData.get("memberId") ?? "");
+  const projectId = String(formData.get("projectId") ?? "");
+  const role = String(formData.get("role") ?? "");
+  await assertCanManageMembers(user, companyId);
+  const member = await requireActiveCompanyMember(memberId, companyId);
+  if (member.companyRole === "COMPANY_ADMIN") {
+    throw new Error("Company Admin access is automatic.");
+  }
+  if (role !== "REVIEWER" && role !== "APPROVER") throw new Error("Invalid project role.");
+  await db.projectMembership.update({
+    where: { userId_projectId: { userId: memberId, projectId } },
+    data: { role },
+  });
+  revalidateMemberPaths(companyId, memberId);
+}
+
+export async function removeMemberFromCompany(formData: FormData) {
+  const user = await requireUser();
+  const companyId = String(formData.get("companyId") ?? "");
+  const memberId = String(formData.get("memberId") ?? "");
+  const confirmedLastAdmin = formData.get("confirmedLastAdmin") === "true";
+  await assertCanManageMembers(user, companyId);
+  await requireActiveCompanyMember(memberId, companyId);
+
+  if ((await isLastCompanyAdmin(companyId, memberId)) && !confirmedLastAdmin) {
+    throw new Error("Confirm removing the last Company Admin.");
+  }
+
+  await db.$transaction([
+    db.projectMembership.deleteMany({ where: { userId: memberId } }),
+    db.user.update({
+      where: { id: memberId },
+      data: { removedAt: new Date() },
+    }),
+  ]);
+  revalidateMemberPaths(companyId, memberId);
+  redirect(`/staff/companies/${companyId}/members`);
 }
 
 export async function createProject(formData: FormData) {

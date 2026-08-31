@@ -34,6 +34,7 @@ export default async function StaffMembersDirectoryPage({
         members={company.members.map(toDirectoryMember)}
         projects={toDirectoryProjects(company.projects)}
         headingHref={{ href: `/staff/companies/${company.id}`, label: company.name }}
+        rowHref={(memberId) => `/staff/companies/${company.id}/members/${memberId}`}
       />
     </PageShell>
   );

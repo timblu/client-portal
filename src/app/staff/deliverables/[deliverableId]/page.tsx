@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireStaff } from "@/lib/guards";
+import { attributedName } from "@/lib/format";
 import { DeliverableViewer } from "@/components/DeliverableViewer";
 import { addVersion } from "@/lib/actions";
 
@@ -60,7 +61,7 @@ export default async function StaffDeliverablePage({
           decisionState: active.decisionState,
           decisionComment: active.decisionComment,
           decidedAt: active.decidedAt?.toISOString() ?? null,
-          decidedByName: active.decidedBy?.name ?? null,
+          decidedByName: attributedName(active.decidedBy),
           threads: active.threads.map((t) => ({
             id: t.id,
             xPct: t.xPct,
@@ -71,7 +72,7 @@ export default async function StaffDeliverablePage({
               id: c.id,
               body: c.body,
               createdAt: c.createdAt.toISOString(),
-              author: { name: c.author.name, role: c.author.role },
+              author: { name: attributedName(c.author) ?? c.author.name, role: c.author.role },
             })),
           })),
         }}

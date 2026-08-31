@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireClient } from "@/lib/guards";
 import { canAccessProject, canApproveProject } from "@/lib/access";
+import { attributedName } from "@/lib/format";
 import { DeliverableViewer } from "@/components/DeliverableViewer";
 
 export default async function ClientDeliverablePage({
@@ -60,7 +61,7 @@ export default async function ClientDeliverablePage({
           decisionState: active.decisionState,
           decisionComment: active.decisionComment,
           decidedAt: active.decidedAt?.toISOString() ?? null,
-          decidedByName: active.decidedBy?.name ?? null,
+          decidedByName: attributedName(active.decidedBy),
           threads: active.threads.map((t) => ({
             id: t.id,
             xPct: t.xPct,
@@ -71,7 +72,7 @@ export default async function ClientDeliverablePage({
               id: c.id,
               body: c.body,
               createdAt: c.createdAt.toISOString(),
-              author: { name: c.author.name, role: c.author.role },
+              author: { name: attributedName(c.author) ?? c.author.name, role: c.author.role },
             })),
           })),
         }}
