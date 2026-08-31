@@ -405,3 +405,17 @@ details > summary::-webkit-details-marker {
 .wf-segment button[data-active="false"]:hover {
   color: var(--text-primary);
 }
+
+.wf-segment button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.wf-confirm-dialog {
+  margin: auto;
+  border: none;
+}
+
+.wf-confirm-dialog::backdrop {
+  background: rgba(17, 17, 17, 0.4);
+}
