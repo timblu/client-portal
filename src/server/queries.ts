@@ -387,6 +387,7 @@ function serializeDeliverableView(
         id: string;
         xPct: number | null;
         yPct: number | null;
+        screen: string | null;
         resolved: boolean;
         pinnedToTop: boolean;
         comments: {
@@ -431,6 +432,7 @@ function serializeDeliverableView(
         id: thread.id,
         xPct: thread.xPct,
         yPct: thread.yPct,
+        screen: thread.screen,
         resolved: thread.resolved,
         pinnedToTop: thread.pinnedToTop,
         comments: thread.comments.map((comment) => ({

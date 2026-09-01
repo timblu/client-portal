@@ -170,6 +170,7 @@ model CommentThread {
   version     Version  @relation(fields: [versionId], references: [id])
   xPct        Float?
   yPct        Float?
+  screen      String?
   resolved    Boolean  @default(false)
   pinnedToTop Boolean  @default(false)
   createdAt   DateTime @default(now())

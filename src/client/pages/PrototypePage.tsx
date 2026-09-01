@@ -1,9 +1,24 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { postScreenMessage, readNavigateMessage } from "@/lib/prototype-bridge";
 
 type Screen = "cart" | "shipping" | "confirmation";
+const SCREENS: Screen[] = ["cart", "shipping", "confirmation"];
 
 export function PrototypePage() {
   const [screen, setScreen] = useState<Screen>("cart");
+
+  useEffect(() => {
+    if (window.parent !== window) postScreenMessage(window.parent, screen);
+  }, [screen]);
+
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      const target = readNavigateMessage(e.data);
+      if (target && SCREENS.includes(target as Screen)) setScreen(target as Screen);
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--surface-page)] p-6 font-sans">

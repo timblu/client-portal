@@ -1,9 +1,12 @@
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useApiAction } from "@/client/RouteState";
 import { DecisionBadge } from "@/components/DecisionBadge";
 import { AccountCluster } from "@/components/AccountCluster";
 import { formatDateTime, initials } from "@/lib/format";
+import { postNavigateMessage, readScreenMessage } from "@/lib/prototype-bridge";
+
+const FILES_RAIL_KEY = "cp-files-rail-expanded";
 
 type Comment = {
   id: string;
@@ -16,6 +19,7 @@ type Thread = {
   id: string;
   xPct: number | null;
   yPct: number | null;
+  screen: string | null;
   resolved: boolean;
   pinnedToTop: boolean;
   comments: Comment[];
@@ -46,6 +50,26 @@ type SiblingDeliverable = {
   decisionState: string;
 };
 
+function decisionShort(state: string) {
+  return state === "PENDING" ? "pending" : state.toLowerCase().replace("_", " ");
+}
+
+function readFilesRailExpanded() {
+  try {
+    return sessionStorage.getItem(FILES_RAIL_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function persistFilesRailExpanded(expanded: boolean) {
+  try {
+    sessionStorage.setItem(FILES_RAIL_KEY, String(expanded));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function DeliverableViewer({
   deliverableId,
   title,
@@ -70,11 +94,21 @@ export function DeliverableViewer({
   onMutate?: () => void;
 }) {
   const navigate = useNavigate();
-  const runAction = useApiAction(); // I6: centralized 401 handling
+  const runAction = useApiAction();
   const [, startTransition] = useTransition();
   const canvasRef = useRef<HTMLDivElement>(null);
+  const fileSwitcherRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
   const [mode, setMode] = useState<"interact" | "comment">("comment");
-  const [galleryOpen, setGalleryOpen] = useState(true);
+  const [filesRailExpanded, setFilesRailExpanded] = useState(readFilesRailExpanded);
+  const [fileSwitcherOpen, setFileSwitcherOpen] = useState(false);
+  const [fileSearch, setFileSearch] = useState("");
+  const [compareEnabled, setCompareEnabled] = useState(false);
+  const [compareVersionId, setCompareVersionId] = useState<string | null>(null);
+  const [compareVersion, setCompareVersion] = useState<ActiveVersion | null>(null);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [draftPin, setDraftPin] = useState<{ x: number; y: number } | null>(null);
   const [draftBody, setDraftBody] = useState("");
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
@@ -85,6 +119,21 @@ export function DeliverableViewer({
   const [confirmOpenThreads, setConfirmOpenThreads] = useState(false);
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [mutationError, setMutationError] = useState<string | null>(null);
+  const [prototypeScreen, setPrototypeScreen] = useState<string | null>(null);
+  const [screenResetVersionId, setScreenResetVersionId] = useState(activeVersion.id);
+  if (activeVersion.id !== screenResetVersionId) {
+    setScreenResetVersionId(activeVersion.id);
+    setPrototypeScreen(null);
+  }
+
+  const apiBase = `/api${basePath}`;
+  const sortedVersions = useMemo(
+    () => [...versions].sort((a, b) => a.versionNumber - b.versionNumber),
+    [versions]
+  );
+  const activeVersionIndex = sortedVersions.findIndex((v) => v.id === activeVersion.id);
+  const hasPrevVersion = activeVersionIndex > 0;
+  const hasNextVersion = activeVersionIndex < sortedVersions.length - 1;
 
   const openThreadCount = activeVersion.threads.filter((t) => !t.resolved).length;
   const canDecide = currentUser.canDecide;
@@ -100,6 +149,96 @@ export function DeliverableViewer({
       }),
     [activeVersion.threads]
   );
+
+  const filteredSiblings = useMemo(() => {
+    const query = fileSearch.trim().toLowerCase();
+    if (!query) return siblings;
+    return siblings.filter((s) => s.title.toLowerCase().includes(query));
+  }, [siblings, fileSearch]);
+
+  useEffect(() => {
+    if (!fileSwitcherOpen) return;
+    function onPointerDown(e: MouseEvent) {
+      if (!fileSwitcherRef.current?.contains(e.target as Node)) {
+        setFileSwitcherOpen(false);
+        setFileSearch("");
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [fileSwitcherOpen]);
+
+  useEffect(() => {
+    if (!compareEnabled || !compareVersionId || compareVersionId === activeVersion.id) {
+      setCompareVersion(null);
+      setCompareLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setCompareLoading(true);
+    fetch(`${apiBase}/deliverables/${deliverableId}?version=${encodeURIComponent(compareVersionId)}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to load compare version");
+        return res.json();
+      })
+      .then((data) => {
+        if (!cancelled) setCompareVersion(data.activeVersion as ActiveVersion);
+      })
+      .catch(() => {
+        if (!cancelled) setCompareVersion(null);
+      })
+      .finally(() => {
+        if (!cancelled) setCompareLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [compareEnabled, compareVersionId, activeVersion.id, apiBase, deliverableId]);
+
+  useEffect(() => {
+    if (!isPrototype) return;
+    function onMessage(e: MessageEvent) {
+      const screen = readScreenMessage(e.data);
+      if (screen) setPrototypeScreen(screen);
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [isPrototype]);
+
+  function selectThread(threadId: string) {
+    setActiveThreadId(threadId);
+    const thread = activeVersion.threads.find((t) => t.id === threadId);
+    if (
+      isPrototype &&
+      thread?.screen &&
+      thread.screen !== prototypeScreen &&
+      iframeRef.current?.contentWindow
+    ) {
+      postNavigateMessage(iframeRef.current.contentWindow, thread.screen);
+    }
+  }
+
+  function navigateToVersion(versionId: string) {
+    navigate(`${basePath}/deliverables/${deliverableId}?version=${versionId}`);
+  }
+
+  function toggleFilesRailExpanded(expanded: boolean) {
+    setFilesRailExpanded(expanded);
+    persistFilesRailExpanded(expanded);
+  }
+
+  function toggleCompare() {
+    if (compareEnabled) {
+      setCompareEnabled(false);
+      return;
+    }
+    const prev = sortedVersions[activeVersionIndex - 1];
+    const fallback = sortedVersions.find((v) => v.id !== activeVersion.id);
+    setCompareVersionId(prev?.id ?? fallback?.id ?? null);
+    setCompareEnabled(true);
+  }
 
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!canPin) return;
@@ -122,6 +261,7 @@ export function DeliverableViewer({
         versionId: activeVersion.id,
         xPct: x,
         yPct: y,
+        screen: isPrototype ? prototypeScreen : undefined,
         body,
       });
       if (!result.ok) {
@@ -177,58 +317,74 @@ export function DeliverableViewer({
 
   return (
     <div className="flex flex-1 flex-col bg-[var(--surface-page)]">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
-        <div className="flex items-center gap-3">
+      {/* Deliverable bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-5 py-2.5">
+        <div className="flex min-w-0 items-center gap-3">
           {chrome ? (
             <Link to={chrome.homeHref} className="text-sm font-semibold tracking-tight">
               Review Portal
             </Link>
           ) : null}
           {crumb ? (
-            <Link to={crumb.href} className="wf-back">
-              {crumb.label}
+            <Link to={crumb.href} className="wf-back shrink-0">
+              ← {crumb.label}
             </Link>
           ) : null}
-          <div>
-            <h1 className="text-sm font-semibold">{title}</h1>
-          </div>
-          {!galleryOpen ? (
-            <button className="wf-toggle" onClick={() => setGalleryOpen(true)}>
-              Files
-            </button>
-          ) : null}
-          <select
-            className="wf-input wf-select text-xs"
-            value={activeVersion.id}
-            onChange={(e) =>
-              navigate(`${basePath}/deliverables/${deliverableId}?version=${e.target.value}`)
-            }
-          >
-            {versions.map((v) => (
-              <option key={v.id} value={v.id}>
-                Version {v.versionNumber}
-              </option>
-            ))}
-          </select>
-          {isPrototype ? (
-            <div className="wf-segment text-xs">
-              <button
-                data-active={mode === "interact"}
-                className="px-3 py-1.5 transition-colors"
-                onClick={() => setMode("interact")}
-              >
-                Interact
-              </button>
-              <button
-                data-active={mode === "comment"}
-                className="px-3 py-1.5 transition-colors"
-                onClick={() => setMode("comment")}
-              >
-                Comment
-              </button>
+          <div ref={fileSwitcherRef} className="relative min-w-0">
+            <div className="flex min-w-0 items-center gap-1">
+              <h1 className="truncate text-sm font-semibold">{title}</h1>
+              {siblings.length > 0 ? (
+                <button
+                  type="button"
+                  className="wf-icon-btn shrink-0 text-[var(--text-secondary)]"
+                  aria-label="Switch file"
+                  aria-expanded={fileSwitcherOpen}
+                  onClick={() => setFileSwitcherOpen((open) => !open)}
+                >
+                  ▾
+                </button>
+              ) : null}
             </div>
-          ) : null}
+            {fileSwitcherOpen && siblings.length > 0 ? (
+              <div className="absolute left-0 top-full z-30 mt-1 w-72 wf-panel">
+                {siblings.length >= 8 ? (
+                  <div className="border-b border-[var(--border-subtle)] p-2">
+                    <input
+                      type="search"
+                      className="wf-input w-full text-xs"
+                      placeholder="Search files…"
+                      value={fileSearch}
+                      onChange={(e) => setFileSearch(e.target.value)}
+                    />
+                  </div>
+                ) : null}
+                <ul className="max-h-64 overflow-y-auto py-1">
+                  {filteredSiblings.map((s) => (
+                    <li key={s.id}>
+                      <Link
+                        to={`${basePath}/deliverables/${s.id}`}
+                        className={`block px-3 py-2 text-xs hover:bg-[var(--surface-sunken)] ${
+                          s.id === deliverableId ? "bg-[var(--surface-sunken)]" : ""
+                        }`}
+                        onClick={() => {
+                          setFileSwitcherOpen(false);
+                          setFileSearch("");
+                        }}
+                      >
+                        <p className="truncate font-medium">{s.title}</p>
+                        <p className="mt-0.5 text-[0.625rem] text-[var(--text-tertiary)]">
+                          {s.type === "DESIGN" ? "Design" : "Doc"} · {decisionShort(s.decisionState)}
+                        </p>
+                      </Link>
+                    </li>
+                  ))}
+                  {filteredSiblings.length === 0 ? (
+                    <li className="px-3 py-2 text-xs text-[var(--text-secondary)]">No matches.</li>
+                  ) : null}
+                </ul>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -253,15 +409,19 @@ export function DeliverableViewer({
       </div>
 
       {mutationError ? (
-        <div className="mx-5 mb-3 rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-page)] px-5 py-3 text-sm text-[var(--text-secondary)]">
+        <div className="mx-5 mt-3 rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-page)] px-5 py-3 text-sm text-[var(--text-secondary)]">
           {mutationError}
         </div>
       ) : null}
 
       {decisionAction ? (
-        <div className="mx-5 mb-3 rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-page)] px-5 py-3">
+        <div className="mx-5 mt-3 rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-page)] px-5 py-3">
           <p className="text-xs font-semibold uppercase tracking-wide">
-            {decisionAction === "APPROVED" ? "Approve this version" : decisionAction === "REJECTED" ? "Reject this version" : "Request changes"}
+            {decisionAction === "APPROVED"
+              ? "Approve this version"
+              : decisionAction === "REJECTED"
+              ? "Reject this version"
+              : "Request changes"}
           </p>
           {decisionAction !== "APPROVED" ? (
             <textarea
@@ -282,7 +442,8 @@ export function DeliverableViewer({
           )}
           {confirmOpenThreads ? (
             <p className="mt-2 text-xs">
-              {openThreadCount} comment thread{openThreadCount === 1 ? "" : "s"} still open. Approve anyway?
+              {openThreadCount} comment thread{openThreadCount === 1 ? "" : "s"} still open. Approve
+              anyway?
             </p>
           ) : null}
           <div className="mt-2 flex gap-2">
@@ -308,120 +469,180 @@ export function DeliverableViewer({
       ) : null}
 
       {activeVersion.decisionState !== "PENDING" && activeVersion.decisionComment ? (
-        <div className="px-5 pb-2 text-xs text-[var(--text-secondary)]">
+        <div className="px-5 pt-2 text-xs text-[var(--text-secondary)]">
           <span className="font-semibold">{activeVersion.decidedByName}:</span>{" "}
           {activeVersion.decisionComment}
         </div>
       ) : null}
 
-      {/* Body: gallery + canvas + sidebar */}
+      {/* Body: files rail + canvas column + comments */}
       <div className="flex min-h-0 flex-1 gap-3 overflow-hidden p-3">
-        {galleryOpen ? (
-          <div className="wf-panel w-56 shrink-0 overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-2.5">
-              <span className="text-[0.6875rem] font-medium uppercase tracking-[0.04em] text-[var(--text-secondary)]">
-                Files
-              </span>
-              <button className="wf-toggle" onClick={() => setGalleryOpen(false)}>
-                Hide
-              </button>
-            </div>
-            <ul>
-              {siblings.map((s) => (
-                <li key={s.id}>
-                  <Link
-                    to={`${basePath}/deliverables/${s.id}`}
-                    className={`block border-b border-[var(--border-subtle)] px-4 py-2.5 text-xs last:border-b-0 hover:bg-[var(--surface-sunken)] ${
-                      s.id === deliverableId ? "border-l-[3px] border-l-[var(--action-primary-bg)] bg-[var(--surface-sunken)]" : "border-l-[3px] border-l-transparent"
-                    }`}
-                  >
-                    <p className="truncate font-medium">{s.title}</p>
-                    <p className={`mt-0.5 text-[0.625rem] ${s.id === deliverableId ? "text-[var(--text-secondary)]" : "text-[var(--text-tertiary)]"}`}>
-                      {s.type === "DESIGN" ? "Design" : "Doc"} ·{" "}
-                      {s.decisionState === "PENDING" ? "pending" : s.decisionState.toLowerCase().replace("_", " ")}
-                    </p>
-                  </Link>
-                </li>
-              ))}
-              {siblings.length === 0 ? (
-                <li className="px-3 py-2.5 text-xs text-[var(--text-secondary)]">No other files yet.</li>
-              ) : null}
-            </ul>
+        <FilesRail
+          siblings={siblings}
+          deliverableId={deliverableId}
+          basePath={basePath}
+          expanded={filesRailExpanded}
+          onToggleExpanded={toggleFilesRailExpanded}
+        />
+
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-sunken)]">
+          <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--surface-page)] px-4 py-2">
+            <button
+              type="button"
+              className="wf-icon-btn text-[var(--text-secondary)]"
+              aria-label="Previous version"
+              disabled={!hasPrevVersion}
+              onClick={() => {
+                if (hasPrevVersion) navigateToVersion(sortedVersions[activeVersionIndex - 1].id);
+              }}
+            >
+              ‹
+            </button>
+            <span className="text-xs font-semibold tabular-nums">
+              v{activeVersion.versionNumber}
+            </span>
+            <button
+              type="button"
+              className="wf-icon-btn text-[var(--text-secondary)]"
+              aria-label="Next version"
+              disabled={!hasNextVersion}
+              onClick={() => {
+                if (hasNextVersion) navigateToVersion(sortedVersions[activeVersionIndex + 1].id);
+              }}
+            >
+              ›
+            </button>
+            <span className="text-[var(--text-tertiary)]">·</span>
+            <button
+              type="button"
+              className={`text-xs font-medium ${
+                compareEnabled ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]"
+              } hover:text-[var(--text-primary)]`}
+              onClick={toggleCompare}
+            >
+              {compareEnabled ? "Exit compare" : "Compare"}
+            </button>
+            <span className="text-[var(--text-tertiary)]">·</span>
+            <button
+              type="button"
+              className={`text-xs font-medium ${
+                historyOpen ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]"
+              } hover:text-[var(--text-primary)]`}
+              onClick={() => setHistoryOpen((open) => !open)}
+            >
+              History
+            </button>
           </div>
-        ) : null}
-        <div className="relative min-w-0 flex-1 overflow-auto rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-sunken)] p-8">
-          <div
-            ref={canvasRef}
-            onClick={handleCanvasClick}
-            className={`relative mx-auto max-w-4xl overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--surface-page)] ${canPin ? "cursor-crosshair" : ""}`}
-          >
-            <ArtifactSurface version={activeVersion} interactMode={mode === "interact"} />
 
-            {sortedThreads.map((thread, idx) =>
-              thread.xPct == null || thread.yPct == null ? null : (
-                <button
-                  key={thread.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveThreadId(thread.id);
-                  }}
-                  style={{ left: `${thread.xPct}%`, top: `${thread.yPct}%` }}
-                  className={`absolute -translate-x-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full border text-[0.6875rem] font-semibold ${
-                    thread.resolved
-                      ? "border-[var(--text-tertiary)] bg-[var(--surface-page)] text-[var(--text-secondary)]"
-                      : activeThreadId === thread.id
-                      ? "border-[var(--action-primary-bg)] bg-[var(--action-primary-bg)] text-[var(--action-primary-fg)]"
-                      : "border-[var(--action-primary-bg)] bg-[var(--surface-page)] text-[var(--action-primary-bg)]"
-                  }`}
-                >
-                  {idx + 1}
-                </button>
-              )
-            )}
-
-            {draftPin ? (
-              <div
-                style={{ left: `${draftPin.x}%`, top: `${draftPin.y}%` }}
-                className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
-              >
-                <div className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--action-primary-bg)] bg-[var(--surface-page)] text-[0.6875rem] font-semibold text-[var(--action-primary-bg)]">
-                  +
-                </div>
-                <div className="absolute left-1/2 top-7 w-64 -translate-x-1/2 wf-panel p-3">
-                  <textarea
-                    autoFocus
-                    className="wf-input w-full"
-                    rows={2}
-                    placeholder="Leave a comment"
-                    value={draftBody}
-                    onChange={(e) => setDraftBody(e.target.value)}
-                  />
-                  <div className="mt-2 flex justify-end gap-2">
+          {historyOpen ? (
+            <div className="border-b border-[var(--border-subtle)] bg-[var(--surface-page)] px-4 py-2">
+              <ul className="flex flex-wrap gap-2">
+                {sortedVersions.map((v) => (
+                  <li key={v.id}>
                     <button
-                      className="wf-btn"
-                      onClick={() => {
-                        setDraftPin(null);
-                        setDraftBody("");
-                      }}
+                      type="button"
+                      className={`flex items-center gap-2 rounded-[var(--radius-pill)] border px-3 py-1.5 text-xs transition-colors ${
+                        v.id === activeVersion.id
+                          ? "border-[var(--action-primary-bg)] bg-[var(--surface-sunken)]"
+                          : "border-[var(--border-subtle)] hover:bg-[var(--surface-sunken)]"
+                      }`}
+                      onClick={() => navigateToVersion(v.id)}
                     >
-                      Cancel
+                      <span className="font-semibold tabular-nums">v{v.versionNumber}</span>
+                      <DecisionBadge state={v.decisionState} />
                     </button>
-                    <button className="wf-btn-solid" onClick={submitDraftPin} disabled={!draftBody.trim()}>
-                      Comment
-                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <div className="min-h-0 flex-1 overflow-auto p-4">
+            {compareEnabled ? (
+              <div className="flex min-h-full gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="mb-2 text-[0.6875rem] font-medium uppercase tracking-[0.04em] text-[var(--text-secondary)]">
+                    v{activeVersion.versionNumber}
+                  </p>
+                  <ReviewCanvas
+                    version={activeVersion}
+                    mode={mode}
+                    onModeChange={setMode}
+                    canvasRef={canvasRef}
+                    canPin={canPin}
+                    onCanvasClick={handleCanvasClick}
+                    sortedThreads={sortedThreads}
+                    activeThreadId={activeThreadId}
+                    onThreadSelect={selectThread}
+                    draftPin={draftPin}
+                    draftBody={draftBody}
+                    onDraftBodyChange={setDraftBody}
+                    onCancelDraft={() => {
+                      setDraftPin(null);
+                      setDraftBody("");
+                    }}
+                    onSubmitDraft={submitDraftPin}
+                    prototypeScreen={prototypeScreen}
+                    iframeRef={iframeRef}
+                  />
+                </div>
+                <div className="min-w-0 flex-1 border-l border-[var(--border-subtle)] pl-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-[0.6875rem] font-medium uppercase tracking-[0.04em] text-[var(--text-secondary)]">
+                      Compare
+                    </p>
+                    <select
+                      className="wf-input wf-select max-w-[10rem] text-xs"
+                      value={compareVersionId ?? ""}
+                      onChange={(e) => setCompareVersionId(e.target.value)}
+                      aria-label="Compare with version"
+                    >
+                      {sortedVersions
+                        .filter((v) => v.id !== activeVersion.id)
+                        .map((v) => (
+                          <option key={v.id} value={v.id}>
+                            v{v.versionNumber}
+                          </option>
+                        ))}
+                    </select>
                   </div>
+                  {compareLoading ? (
+                    <p className="text-xs text-[var(--text-secondary)]">Loading…</p>
+                  ) : compareVersion ? (
+                    <div className="overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--surface-page)]">
+                      <ArtifactSurface version={compareVersion} interactMode={true} />
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[var(--text-secondary)]">Select a version to compare.</p>
+                  )}
                 </div>
               </div>
-            ) : null}
+            ) : (
+              <ReviewCanvas
+                version={activeVersion}
+                mode={mode}
+                onModeChange={setMode}
+                canvasRef={canvasRef}
+                canPin={canPin}
+                onCanvasClick={handleCanvasClick}
+                sortedThreads={sortedThreads}
+                activeThreadId={activeThreadId}
+                onThreadSelect={selectThread}
+                draftPin={draftPin}
+                draftBody={draftBody}
+                onDraftBodyChange={setDraftBody}
+                onCancelDraft={() => {
+                  setDraftPin(null);
+                  setDraftBody("");
+                }}
+                onSubmitDraft={submitDraftPin}
+                prototypeScreen={prototypeScreen}
+                iframeRef={iframeRef}
+              />
+            )}
           </div>
-          {canPin ? (
-            <p className="mx-auto mt-3 max-w-4xl text-center text-xs text-[var(--text-secondary)]">
-              Click anywhere on the file to leave a comment.
-            </p>
-          ) : null}
         </div>
 
-        {/* Comments sidebar */}
         <div className="wf-panel w-80 shrink-0 overflow-y-auto">
           <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-2.5">
             <span className="text-[0.6875rem] font-medium uppercase tracking-[0.04em] text-[var(--text-secondary)]">
@@ -437,7 +658,7 @@ export function DeliverableViewer({
               {sortedThreads.map((thread, idx) => (
                 <li
                   key={thread.id}
-                  onClick={() => setActiveThreadId(thread.id)}
+                  onClick={() => selectThread(thread.id)}
                   className={`cursor-pointer border-b border-[var(--border-subtle)] p-4 ${
                     activeThreadId === thread.id ? "bg-[var(--surface-sunken)]" : ""
                   }`}
@@ -447,6 +668,7 @@ export function DeliverableViewer({
                       <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[var(--action-primary-bg)] text-[0.625rem] text-[var(--action-primary-bg)]">
                         {idx + 1}
                       </span>
+                      {thread.screen ? <span className="wf-tag">{thread.screen}</span> : null}
                       {thread.pinnedToTop ? <span className="wf-tag">Pinned</span> : null}
                       {thread.resolved ? <span className="wf-tag">Resolved</span> : null}
                     </span>
@@ -502,7 +724,9 @@ export function DeliverableViewer({
                             {initials(c.author.name)}
                           </span>
                           <span className="font-semibold">{c.author.name}</span>
-                          <span className="text-[var(--text-tertiary)]">{formatDateTime(c.createdAt)}</span>
+                          <span className="text-[var(--text-tertiary)]">
+                            {formatDateTime(c.createdAt)}
+                          </span>
                         </div>
                         <p className="ml-5 mt-0.5 text-[var(--text-primary)]">{c.body}</p>
                       </div>
@@ -542,21 +766,275 @@ export function DeliverableViewer({
   );
 }
 
+function FilesRail({
+  siblings,
+  deliverableId,
+  basePath,
+  expanded,
+  onToggleExpanded,
+}: {
+  siblings: SiblingDeliverable[];
+  deliverableId: string;
+  basePath: string;
+  expanded: boolean;
+  onToggleExpanded: (expanded: boolean) => void;
+}) {
+  if (siblings.length === 0) return null;
+
+  if (!expanded) {
+    return (
+      <div className="wf-panel flex w-12 shrink-0 flex-col overflow-hidden">
+        <div className="flex justify-center border-b border-[var(--border-subtle)] py-2">
+          <button
+            type="button"
+            className="wf-icon-btn text-[var(--text-secondary)]"
+            aria-label="Expand files panel"
+            onClick={() => onToggleExpanded(true)}
+          >
+            ›
+          </button>
+        </div>
+        <ul className="flex-1 overflow-y-auto py-1">
+          {siblings.map((s) => (
+            <li key={s.id}>
+              <Link
+                to={`${basePath}/deliverables/${s.id}`}
+                title={s.title}
+                className={`block border-b border-[var(--border-subtle)] px-1 py-2 text-center text-[0.5625rem] leading-tight last:border-b-0 hover:bg-[var(--surface-sunken)] ${
+                  s.id === deliverableId
+                    ? "border-l-[3px] border-l-[var(--action-primary-bg)] bg-[var(--surface-sunken)] font-semibold"
+                    : "border-l-[3px] border-l-transparent text-[var(--text-secondary)]"
+                }`}
+              >
+                <span className="line-clamp-3 break-all">{s.title}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  return (
+    <div className="wf-panel w-56 shrink-0 overflow-y-auto">
+      <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-2.5">
+        <span className="text-[0.6875rem] font-medium uppercase tracking-[0.04em] text-[var(--text-secondary)]">
+          Files
+        </span>
+        <button type="button" className="wf-toggle" onClick={() => onToggleExpanded(false)}>
+          Collapse
+        </button>
+      </div>
+      <ul>
+        {siblings.map((s) => (
+          <li key={s.id}>
+            <Link
+              to={`${basePath}/deliverables/${s.id}`}
+              className={`block border-b border-[var(--border-subtle)] px-4 py-2.5 text-xs last:border-b-0 hover:bg-[var(--surface-sunken)] ${
+                s.id === deliverableId
+                  ? "border-l-[3px] border-l-[var(--action-primary-bg)] bg-[var(--surface-sunken)]"
+                  : "border-l-[3px] border-l-transparent"
+              }`}
+            >
+              <p className="truncate font-medium">{s.title}</p>
+              <p
+                className={`mt-0.5 text-[0.625rem] ${
+                  s.id === deliverableId
+                    ? "text-[var(--text-secondary)]"
+                    : "text-[var(--text-tertiary)]"
+                }`}
+              >
+                {s.type === "DESIGN" ? "Design" : "Doc"} · {decisionShort(s.decisionState)}
+              </p>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ReviewCanvas({
+  version,
+  mode,
+  onModeChange,
+  canvasRef,
+  canPin,
+  onCanvasClick,
+  sortedThreads,
+  activeThreadId,
+  onThreadSelect,
+  draftPin,
+  draftBody,
+  onDraftBodyChange,
+  onCancelDraft,
+  onSubmitDraft,
+  prototypeScreen,
+  iframeRef,
+}: {
+  version: ActiveVersion;
+  mode: "interact" | "comment";
+  onModeChange: (mode: "interact" | "comment") => void;
+  canvasRef: React.RefObject<HTMLDivElement | null>;
+  canPin: boolean;
+  onCanvasClick: (e: React.MouseEvent<HTMLDivElement>) => void;
+  sortedThreads: Thread[];
+  activeThreadId: string | null;
+  onThreadSelect: (id: string) => void;
+  draftPin: { x: number; y: number } | null;
+  draftBody: string;
+  onDraftBodyChange: (value: string) => void;
+  onCancelDraft: () => void;
+  onSubmitDraft: () => void;
+  prototypeScreen: string | null;
+  iframeRef: React.RefObject<HTMLIFrameElement | null>;
+}) {
+  const isPrototype = version.kind === "PROTOTYPE_URL";
+  const canvasThreads = isPrototype
+    ? sortedThreads.filter((t) => t.screen == null || t.screen === prototypeScreen)
+    : sortedThreads;
+
+  return (
+    <div className="mx-auto max-w-4xl">
+      <div
+        ref={canvasRef}
+        onClick={onCanvasClick}
+        className={`relative overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--surface-page)] ${
+          canPin ? "cursor-crosshair" : ""
+        }`}
+      >
+        <ArtifactSurface version={version} interactMode={mode === "interact"} iframeRef={iframeRef} />
+
+        {isPrototype ? (
+          <PrototypeModeControl mode={mode} onModeChange={onModeChange} />
+        ) : null}
+
+        {canvasThreads.map((thread) => {
+          const idx = sortedThreads.indexOf(thread);
+          return thread.xPct == null || thread.yPct == null ? null : (
+            <button
+              key={thread.id}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onThreadSelect(thread.id);
+              }}
+              style={{ left: `${thread.xPct}%`, top: `${thread.yPct}%` }}
+              className={`absolute -translate-x-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full border text-[0.6875rem] font-semibold ${
+                thread.resolved
+                  ? "border-[var(--text-tertiary)] bg-[var(--surface-page)] text-[var(--text-secondary)]"
+                  : activeThreadId === thread.id
+                  ? "border-[var(--action-primary-bg)] bg-[var(--action-primary-bg)] text-[var(--action-primary-fg)]"
+                  : "border-[var(--action-primary-bg)] bg-[var(--surface-page)] text-[var(--action-primary-bg)]"
+              }`}
+            >
+              {idx + 1}
+            </button>
+          );
+        })}
+
+        {draftPin ? (
+          <div
+            style={{ left: `${draftPin.x}%`, top: `${draftPin.y}%` }}
+            className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
+          >
+            <div className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--action-primary-bg)] bg-[var(--surface-page)] text-[0.6875rem] font-semibold text-[var(--action-primary-bg)]">
+              +
+            </div>
+            <div className="absolute left-1/2 top-7 w-64 -translate-x-1/2 wf-panel p-3">
+              <textarea
+                autoFocus
+                className="wf-input w-full"
+                rows={2}
+                placeholder="Leave a comment"
+                value={draftBody}
+                onChange={(e) => onDraftBodyChange(e.target.value)}
+              />
+              <div className="mt-2 flex justify-end gap-2">
+                <button type="button" className="wf-btn" onClick={onCancelDraft}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="wf-btn-solid"
+                  onClick={onSubmitDraft}
+                  disabled={!draftBody.trim()}
+                >
+                  Comment
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+      {canPin ? (
+        <p className="mt-3 text-center text-xs text-[var(--text-secondary)]">
+          {isPrototype && prototypeScreen
+            ? `Click to leave a comment on the ${prototypeScreen} screen.`
+            : "Click anywhere on the file to leave a comment."}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function PrototypeModeControl({
+  mode,
+  onModeChange,
+}: {
+  mode: "interact" | "comment";
+  onModeChange: (mode: "interact" | "comment") => void;
+}) {
+  return (
+    <div className="absolute bottom-3 left-1/2 z-20 -translate-x-1/2">
+      <div className="wf-segment text-xs shadow-[var(--elevation-card)]">
+        <button
+          type="button"
+          data-active={mode === "interact"}
+          className="px-3 py-1.5 transition-colors"
+          onClick={() => onModeChange("interact")}
+        >
+          Interact
+        </button>
+        <button
+          type="button"
+          data-active={mode === "comment"}
+          className="px-3 py-1.5 transition-colors"
+          onClick={() => onModeChange("comment")}
+        >
+          Comment
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ArtifactSurface({
   version,
   interactMode,
+  iframeRef,
 }: {
   version: ActiveVersion;
   interactMode: boolean;
+  iframeRef?: React.RefObject<HTMLIFrameElement | null>;
 }) {
   if (version.kind === "STATIC_IMAGE") {
-    return <img src={version.fileUrl ?? ""} alt="Design version" className="block w-full select-none" draggable={false} />;
+    return (
+      <img
+        src={version.fileUrl ?? ""}
+        alt="Design version"
+        className="block w-full select-none"
+        draggable={false}
+      />
+    );
   }
 
   if (version.kind === "STATIC_PDF") {
     return (
       <object data={version.fileUrl ?? ""} type="application/pdf" className="h-[720px] w-full">
-        <p className="p-6 text-sm text-[var(--text-secondary)]">PDF preview unavailable — {version.fileUrl}</p>
+        <p className="p-6 text-sm text-[var(--text-secondary)]">
+          PDF preview unavailable — {version.fileUrl}
+        </p>
       </object>
     );
   }
@@ -572,13 +1050,12 @@ function ArtifactSurface({
   return (
     <div className="relative h-[600px] w-full">
       <iframe
+        ref={iframeRef}
         src={version.prototypeUrl ?? ""}
         className="h-full w-full border-0"
         title="Hosted prototype"
       />
-      {!interactMode ? (
-        <div className="absolute inset-0" aria-hidden />
-      ) : null}
+      {!interactMode ? <div className="absolute inset-0" aria-hidden /> : null}
     </div>
   );
 }

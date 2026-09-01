@@ -257,4 +257,62 @@ describe("api routes", () => {
     expect(generalThread.xPct).toBeNull();
     expect(generalThread.yPct).toBeNull();
   });
+
+  it("persists the prototype screen for comments added on a PROTOTYPE_URL version", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "priya@northwind.test");
+
+    const version = await db.version.findFirst({
+      where: { deliverable: { title: "Checkout flow prototype" } },
+    });
+    expect(version).toBeTruthy();
+
+    const response = await agent.post("/api/actions/add-thread").send({
+      versionId: version!.id,
+      xPct: 50,
+      yPct: 40,
+      screen: "shipping",
+      body: "Should this field be required?",
+    });
+    expect(response.status).toBe(200);
+    expect(response.body.ok).toBe(true);
+
+    const deliverableResponse = await agent.get(
+      `/api/client/deliverables/${version!.deliverableId}?version=${version!.id}`
+    );
+    const newThread = deliverableResponse.body.activeVersion.threads.find(
+      (item: { comments: { body: string }[] }) =>
+        item.comments.some((c) => c.body === "Should this field be required?")
+    );
+    expect(newThread.screen).toBe("shipping");
+  });
+
+  it("ignores the screen field for comments on non-prototype versions", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "sam@agency.test");
+
+    const version = await db.version.findFirst({
+      where: { deliverable: { title: "Homepage concept" } },
+      orderBy: { versionNumber: "asc" },
+    });
+    expect(version).toBeTruthy();
+
+    const response = await agent.post("/api/actions/add-thread").send({
+      versionId: version!.id,
+      xPct: 10,
+      yPct: 10,
+      screen: "shipping",
+      body: "This should stay unscoped.",
+    });
+    expect(response.status).toBe(200);
+
+    const deliverableResponse = await agent.get(
+      `/api/staff/deliverables/${version!.deliverableId}?version=${version!.id}`
+    );
+    const newThread = deliverableResponse.body.activeVersion.threads.find(
+      (item: { comments: { body: string }[] }) =>
+        item.comments.some((c) => c.body === "This should stay unscoped.")
+    );
+    expect(newThread.screen).toBeNull();
+  });
 });

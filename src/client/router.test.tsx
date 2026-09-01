@@ -696,7 +696,7 @@ describe("deliverable viewer and members", () => {
       expect(screen.getByRole("heading", { name: "Homepage" })).toBeInTheDocument();
     });
 
-    await user.selectOptions(screen.getByRole("combobox"), "v2");
+    await user.click(screen.getByRole("button", { name: "Next version" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
