@@ -23,6 +23,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    exclude: ["**/node_modules/**", "**/.git/**", "**/.worktrees/**"],
     setupFiles: ["./src/client/test-setup.ts"],
     fileParallelism: false,
     globalSetup: ["./vitest.global-setup.ts"],
