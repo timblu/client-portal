@@ -1,4 +1,3 @@
-import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { isCompanyAdmin, type AccessUser } from "@/lib/access";
 
@@ -45,10 +44,15 @@ export async function requireActiveCompanyMember(memberId: string, companyId: st
   return member;
 }
 
-export function revalidateMemberPaths(companyId: string, memberId?: string) {
-  revalidatePath(`/staff/companies/${companyId}`);
-  revalidatePath(`/staff/companies/${companyId}/members`);
-  if (memberId) revalidatePath(`/staff/companies/${companyId}/members/${memberId}`);
-  revalidatePath("/client/members");
-  if (memberId) revalidatePath(`/client/members/${memberId}`);
+export function memberPathsToRefresh(companyId: string, memberId?: string) {
+  const paths = [
+    `/staff/companies/${companyId}`,
+    `/staff/companies/${companyId}/members`,
+    "/client/members",
+  ];
+  if (memberId) {
+    paths.push(`/staff/companies/${companyId}/members/${memberId}`);
+    paths.push(`/client/members/${memberId}`);
+  }
+  return paths;
 }

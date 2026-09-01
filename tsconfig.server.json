@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler"
+  },
+  "include": [
+    "src/server/**/*.ts",
+    "src/lib/auth.ts",
+    "src/lib/members.ts",
+    "src/lib/access.ts",
+    "src/lib/db.ts",
+    "src/lib/format.ts",
+    "src/lib/notifications.ts",
+    "src/components/members/serialize.ts",
+    "src/components/members/types.ts",
+    "vitest.config.ts",
+    "vitest.global-setup.ts"
+  ],
+  "exclude": ["node_modules"]
+}

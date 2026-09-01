@@ -1,0 +1,144 @@
+import request from "supertest";
+import { describe, expect, it } from "vitest";
+import { db } from "@/lib/db";
+import { createApp } from "./app";
+import { findUserByEmail, signInAs } from "./test-helpers";
+
+describe("api routes", () => {
+  it("returns 401 for unauthenticated staff queries", async () => {
+    const response = await request(createApp()).get("/api/staff/companies");
+    expect(response.status).toBe(401);
+    expect(response.body.error).toMatch(/signed in/i);
+  });
+
+  it("returns 403 when a client requests staff routes", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "casey@northwind.test");
+
+    const response = await agent.get("/api/staff/companies");
+    expect(response.status).toBe(403);
+  });
+
+  it("returns 404 for cross-company client project access", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "casey@northwind.test");
+
+    const alpineProject = await db.project.findFirst({
+      where: { company: { name: "Alpine Outfitters" } },
+    });
+    expect(alpineProject).toBeTruthy();
+
+    const response = await agent.get(`/api/client/projects/${alpineProject!.id}`);
+    expect(response.status).toBe(404);
+  });
+
+  it("allows staff to load member management data", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "sam@agency.test");
+
+    const company = await db.company.findFirst({ where: { name: "Northwind Retail" } });
+    const response = await agent.get(`/api/staff/companies/${company!.id}/members`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.members.length).toBeGreaterThan(0);
+  });
+
+  it("allows company admins to load member management data", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "alex@northwind.test");
+
+    const response = await agent.get("/api/client/members");
+    expect(response.status).toBe(200);
+    expect(response.body.members.length).toBeGreaterThan(0);
+  });
+
+  it("forbids reviewers from submitting approval decisions", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "priya@northwind.test");
+
+    const version = await db.version.findFirst({
+      where: { decisionState: "PENDING" },
+      include: { deliverable: { include: { project: { include: { company: true } } } } },
+    });
+    expect(version).toBeTruthy();
+
+    const response = await agent.post("/api/actions/submit-decision").send({
+      versionId: version!.id,
+      decisionState: "APPROVED",
+      comment: "",
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toMatch(/approver/i);
+  });
+
+  it("allows approvers to submit approval decisions", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "casey@northwind.test");
+
+    const version = await db.version.findFirst({
+      where: {
+        decisionState: "PENDING",
+        deliverable: { project: { company: { name: "Northwind Retail" } } },
+      },
+    });
+    expect(version).toBeTruthy();
+
+    const response = await agent.post("/api/actions/submit-decision").send({
+      versionId: version!.id,
+      decisionState: "APPROVED",
+      comment: "",
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.ok).toBe(true);
+  });
+
+  it("allows staff to invite a member", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "sam@agency.test");
+    const company = await db.company.findFirst({ where: { name: "Alpine Outfitters" } });
+    const project = await db.project.findFirst({ where: { companyId: company!.id } });
+
+    const response = await agent.post("/api/actions/invite-member").send({
+      companyId: company!.id,
+      email: "new.member@alpine.test",
+      name: "New Member",
+      companyRole: "MEMBER",
+      memberships: [{ projectId: project!.id, role: "REVIEWER" }],
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.ok).toBe(true);
+  });
+
+  it("returns bootstrap data for signed-in users", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "sam@agency.test");
+
+    const response = await agent.get("/api/bootstrap");
+    expect(response.status).toBe(200);
+    expect(response.body.user.email).toBe("sam@agency.test");
+    expect(response.body.switchTargets.length).toBeGreaterThan(0);
+  });
+
+  it("blocks non-admin clients from the members directory", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "casey@northwind.test");
+
+    const response = await agent.get("/api/client/members");
+    expect(response.status).toBe(403);
+  });
+
+  it("supports account switching through the action endpoint", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "sam@agency.test");
+    const devon = await findUserByEmail("devon@alpine.test");
+
+    const response = await agent.post("/api/actions/switch-user").send({ userId: devon.id });
+    expect(response.status).toBe(200);
+
+    const session = await agent.get("/api/session");
+    expect(session.body.user.email).toBe("devon@alpine.test");
+  });
+});
