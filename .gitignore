@@ -42,6 +42,9 @@ next-env.d.ts
 
 /src/generated/prisma
 
+# isolated feature worktrees
+/.worktrees/
+
 # sqlite (local dev db — reproducible via `npx prisma migrate dev && npm run db:seed`)
 /prisma/dev.db
 /prisma/dev.db-journal
