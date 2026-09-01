@@ -29,7 +29,7 @@ export function createApp(options?: { distDir?: string; setup?: (app: Applicatio
     const distDir = options?.distDir ?? path.join(process.cwd(), "dist");
     app.use(express.static(distDir));
     app.get(/^(?!\/api|\/auth).*/, (_request, response) => {
-      response.sendFile(path.join(distDir, "index.html"));
+      response.sendFile("index.html", { root: distDir });
     });
   }
 
