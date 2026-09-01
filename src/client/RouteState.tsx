@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { apiGet, ApiError, type SessionResponse } from "@/client/api";
 
 type RouteStateContextValue = {
@@ -91,7 +92,9 @@ type RouteDataEntry<T> = {
 };
 
 export function useRouteData<T>(path: string) {
-  const { revalidateKey } = useRouteState();
+  const { revalidateKey, refreshSession } = useRouteState();
+  const navigate = useNavigate();
+  const location = useLocation();
   const fetchKey = `${path}::${revalidateKey}`;
   const [entry, setEntry] = useState<RouteDataEntry<T>>({
     fetchKey: "",
@@ -109,25 +112,30 @@ export function useRouteData<T>(path: string) {
         }
       })
       .catch((caught) => {
-        if (!cancelled) {
-          setEntry({
-            fetchKey,
-            data: null,
-            error: caught instanceof Error ? caught : new Error("Failed to load data."),
-            done: true,
-          });
+        if (cancelled) return;
+        if (caught instanceof ApiError && caught.status === 401) {
+          void refreshSession();
+          const redirect = encodeURIComponent(location.pathname + location.search);
+          navigate(`/login?redirect=${redirect}`, { replace: true });
+          return;
         }
+        setEntry({
+          fetchKey,
+          data: null,
+          error: caught instanceof Error ? caught : new Error("Failed to load data."),
+          done: true,
+        });
       });
     return () => {
       cancelled = true;
     };
-  }, [fetchKey, path]);
+  }, [fetchKey, path, refreshSession, navigate, location.pathname, location.search]);
 
-  const stale = entry.fetchKey !== fetchKey;
+  const revalidating = entry.fetchKey !== fetchKey;
   return {
-    data: stale ? null : entry.data,
-    error: stale ? null : entry.error,
-    loading: stale || !entry.done,
+    data: entry.data,
+    error: revalidating ? null : entry.error,
+    loading: !entry.done && entry.data === null,
   };
 }
 

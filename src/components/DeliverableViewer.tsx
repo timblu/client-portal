@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo, useRef, useState, useTransition } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiAction } from "@/client/api";
@@ -85,6 +83,7 @@ export function DeliverableViewer({
   const [decisionComment, setDecisionComment] = useState("");
   const [confirmOpenThreads, setConfirmOpenThreads] = useState(false);
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
   const openThreadCount = activeVersion.threads.filter((t) => !t.resolved).length;
   const canDecide = currentUser.canDecide;
@@ -118,12 +117,17 @@ export function DeliverableViewer({
     setDraftPin(null);
     setDraftBody("");
     startTransition(async () => {
-      await apiAction("add-thread", {
+      const result = await apiAction("add-thread", {
         versionId: activeVersion.id,
         xPct: x,
         yPct: y,
         body,
       });
+      if (!result.ok) {
+        setMutationError(result.error);
+        return;
+      }
+      setMutationError(null);
       onMutate?.();
     });
   }
@@ -133,7 +137,12 @@ export function DeliverableViewer({
     if (!body?.trim()) return;
     setReplyDrafts((prev) => ({ ...prev, [threadId]: "" }));
     startTransition(async () => {
-      await apiAction("add-reply", { threadId, body });
+      const result = await apiAction("add-reply", { threadId, body });
+      if (!result.ok) {
+        setMutationError(result.error);
+        return;
+      }
+      setMutationError(null);
       onMutate?.();
     });
   }
@@ -151,11 +160,16 @@ export function DeliverableViewer({
     setDecisionComment("");
     setConfirmOpenThreads(false);
     startTransition(async () => {
-      await apiAction("submit-decision", {
+      const result = await apiAction("submit-decision", {
         versionId: activeVersion.id,
         decisionState: action,
         comment,
       });
+      if (!result.ok) {
+        setMutationError(result.error);
+        return;
+      }
+      setMutationError(null);
       onMutate?.();
     });
   }
@@ -236,6 +250,12 @@ export function DeliverableViewer({
           ) : null}
         </div>
       </div>
+
+      {mutationError ? (
+        <div className="mx-5 mb-3 rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-page)] px-5 py-3 text-sm text-[var(--text-secondary)]">
+          {mutationError}
+        </div>
+      ) : null}
 
       {decisionAction ? (
         <div className="mx-5 mb-3 rounded-[var(--radius-card)] border border-[var(--border-subtle)] bg-[var(--surface-page)] px-5 py-3">
@@ -435,10 +455,15 @@ export function DeliverableViewer({
                         onClick={(e) => {
                           e.stopPropagation();
                           startTransition(async () => {
-                            await apiAction("toggle-thread-pinned", {
+                            const result = await apiAction("toggle-thread-pinned", {
                               threadId: thread.id,
                               pinned: !thread.pinnedToTop,
                             });
+                            if (!result.ok) {
+                              setMutationError(result.error);
+                              return;
+                            }
+                            setMutationError(null);
                             onMutate?.();
                           });
                         }}
@@ -450,10 +475,15 @@ export function DeliverableViewer({
                         onClick={(e) => {
                           e.stopPropagation();
                           startTransition(async () => {
-                            await apiAction("toggle-thread-resolved", {
+                            const result = await apiAction("toggle-thread-resolved", {
                               threadId: thread.id,
                               resolved: !thread.resolved,
                             });
+                            if (!result.ok) {
+                              setMutationError(result.error);
+                              return;
+                            }
+                            setMutationError(null);
                             onMutate?.();
                           });
                         }}
@@ -519,7 +549,6 @@ function ArtifactSurface({
   interactMode: boolean;
 }) {
   if (version.kind === "STATIC_IMAGE") {
-    // eslint-disable-next-line @next/next/no-img-element
     return <img src={version.fileUrl ?? ""} alt="Design version" className="block w-full select-none" draggable={false} />;
   }
 

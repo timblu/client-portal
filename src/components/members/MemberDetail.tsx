@@ -1,5 +1,3 @@
-"use client";
-
 import { useRef, useState, useTransition } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiAction } from "@/client/api";
@@ -35,8 +33,8 @@ export function MemberDetail({
   const navigate = useNavigate();
   const revalidate = useRevalidate();
   const [, startTransition] = useTransition();
-  const [name, setName] = useState(member.name);
   const [banner, setBanner] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<"promote" | "demote" | "remove" | null>(null);
   const [lastAdminChecked, setLastAdminChecked] = useState(false);
   const lastProjectDetails = useRef<Record<string, HTMLDetailsElement | null>>({});
@@ -49,6 +47,16 @@ export function MemberDetail({
     startTransition(() => {
       void action();
     });
+  }
+
+  async function runMutation(action: () => Promise<{ ok: boolean; error?: string }>) {
+    const result = await action();
+    if (!result.ok) {
+      setMutationError(result.error ?? "Request failed.");
+      return false;
+    }
+    setMutationError(null);
+    return true;
   }
 
   function memberBody(extra: Record<string, unknown> = {}) {
@@ -101,40 +109,29 @@ export function MemberDetail({
       </div>
 
       {banner ? <p className="mt-4 text-sm text-[var(--text-secondary)]">{banner}</p> : null}
+      {mutationError ? <p className="mt-4 text-sm text-[var(--text-secondary)]">{mutationError}</p> : null}
 
       <section className="mt-10 border-t border-[var(--border-subtle)] pt-8">
         <h2 className="mb-3 text-[0.6875rem] font-medium uppercase tracking-[0.04em] text-[var(--text-secondary)]">
           Identity
         </h2>
-        <form
-          className="grid max-w-xl gap-3"
-          onSubmit={(e) => {
-            e.preventDefault();
+        <MemberNameForm
+          key={`${member.id}:${member.name}`}
+          initialName={member.name}
+          onSave={(name) => {
             run(async () => {
-              const result = await apiAction("update-member-name", memberBody({ name }));
-              if (result.ok) revalidate();
+              if (await runMutation(() => apiAction("update-member-name", memberBody({ name })))) {
+                revalidate();
+              }
             });
           }}
-        >
-          <div>
-            <label className="mb-1 block text-xs text-[var(--text-secondary)]" htmlFor="member-name">
-              Name
-            </label>
-            <input
-              id="member-name"
-              className="wf-input w-full"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
+        />
+        <div className="mt-3 grid max-w-xl gap-3">
           <div>
             <label className="mb-1 block text-xs text-[var(--text-secondary)]">Email</label>
             <p className="text-sm text-[var(--text-secondary)]">{member.email}</p>
           </div>
-          <button type="submit" className="wf-btn w-fit">
-            Save name
-          </button>
-        </form>
+        </div>
       </section>
 
       <section
@@ -166,11 +163,16 @@ export function MemberDetail({
                         value={membership.role}
                         onChange={(e) => {
                           run(async () => {
-                            const result = await apiAction(
-                              "change-project-role",
-                              memberBody({ projectId: project.id, role: e.target.value })
-                            );
-                            if (result.ok) revalidate();
+                            if (
+                              await runMutation(() =>
+                                apiAction(
+                                  "change-project-role",
+                                  memberBody({ projectId: project.id, role: e.target.value })
+                                )
+                              )
+                            ) {
+                              revalidate();
+                            }
                           });
                         }}
                       >
@@ -196,11 +198,16 @@ export function MemberDetail({
                                 className="wf-btn-solid"
                                 onClick={() => {
                                   run(async () => {
-                                    const result = await apiAction(
-                                      "remove-project-access",
-                                      memberBody({ projectId: project.id })
-                                    );
-                                    if (result.ok) revalidate();
+                                    if (
+                                      await runMutation(() =>
+                                        apiAction(
+                                          "remove-project-access",
+                                          memberBody({ projectId: project.id })
+                                        )
+                                      )
+                                    ) {
+                                      revalidate();
+                                    }
                                   });
                                 }}
                               >
@@ -222,11 +229,16 @@ export function MemberDetail({
                           className="wf-btn"
                           onClick={() => {
                             run(async () => {
-                              const result = await apiAction(
-                                "remove-project-access",
-                                memberBody({ projectId: project.id })
-                              );
-                              if (result.ok) revalidate();
+                              if (
+                                await runMutation(() =>
+                                  apiAction(
+                                    "remove-project-access",
+                                    memberBody({ projectId: project.id })
+                                  )
+                                )
+                              ) {
+                                revalidate();
+                              }
                             });
                           }}
                         >
@@ -242,11 +254,13 @@ export function MemberDetail({
                         className="wf-btn"
                         onClick={() => {
                           run(async () => {
-                            const result = await apiAction(
-                              "add-project-access",
-                              memberBody({ projectId: project.id })
-                            );
-                            if (result.ok) revalidate();
+                            if (
+                              await runMutation(() =>
+                                apiAction("add-project-access", memberBody({ projectId: project.id }))
+                              )
+                            ) {
+                              revalidate();
+                            }
                           });
                         }}
                       >
@@ -305,8 +319,9 @@ export function MemberDetail({
         onConfirm={() => {
           setConfirm(null);
           run(async () => {
-            const result = await apiAction("promote-to-company-admin", memberBody());
-            if (result.ok) revalidate();
+            if (await runMutation(() => apiAction("promote-to-company-admin", memberBody()))) {
+              revalidate();
+            }
           });
         }}
       >
@@ -331,11 +346,14 @@ export function MemberDetail({
               ...memberBody(),
               confirmedLastAdmin: variant === "staff" && isLastAdmin ? true : undefined,
             });
-            if (result.ok) {
-              const data = result.data as { projectCount?: number } | undefined;
-              setBanner(demoteBanner(data?.projectCount ?? 0));
-              revalidate();
+            if (!result.ok) {
+              setMutationError(result.error);
+              return;
             }
+            setMutationError(null);
+            const data = result.data as { projectCount?: number } | undefined;
+            setBanner(demoteBanner(data?.projectCount ?? 0));
+            revalidate();
           });
         }}
         checkbox={
@@ -376,11 +394,16 @@ export function MemberDetail({
               ...memberBody(),
               confirmedLastAdmin: variant === "staff" && isLastAdmin ? true : undefined,
             });
-            if (result.ok && result.redirectTo) {
+            if (!result.ok) {
+              setMutationError(result.error);
+              return;
+            }
+            setMutationError(null);
+            if (result.redirectTo) {
               navigate(result.redirectTo);
               return;
             }
-            if (result.ok) revalidate();
+            revalidate();
           });
         }}
         checkbox={
@@ -402,5 +425,40 @@ export function MemberDetail({
         </p>
       </ConfirmDialog>
     </div>
+  );
+}
+
+function MemberNameForm({
+  initialName,
+  onSave,
+}: {
+  initialName: string;
+  onSave: (name: string) => void;
+}) {
+  const [name, setName] = useState(initialName);
+
+  return (
+    <form
+      className="grid max-w-xl gap-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave(name);
+      }}
+    >
+      <div>
+        <label className="mb-1 block text-xs text-[var(--text-secondary)]" htmlFor="member-name">
+          Name
+        </label>
+        <input
+          id="member-name"
+          className="wf-input w-full"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </div>
+      <button type="submit" className="wf-btn w-fit">
+        Save name
+      </button>
+    </form>
   );
 }

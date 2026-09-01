@@ -43,6 +43,28 @@ describe("auth routes", () => {
     expect(verify.headers["set-cookie"]?.[0]).toMatch(/HttpOnly/i);
   });
 
+  it("redirects to a safe same-origin path after verify", async () => {
+    const agent = request.agent(createApp());
+    const magic = await agent.post("/api/auth/magic-link").send({ email: "sam@agency.test" });
+    const verify = await agent.get(
+      `/auth/verify?token=${magic.body.devLink}&redirect=${encodeURIComponent("/staff/companies/c1")}`
+    );
+
+    expect(verify.status).toBe(302);
+    expect(verify.headers.location).toBe("/staff/companies/c1");
+  });
+
+  it("rejects unsafe redirect targets after verify", async () => {
+    const agent = request.agent(createApp());
+    const magic = await agent.post("/api/auth/magic-link").send({ email: "sam@agency.test" });
+    const verify = await agent.get(
+      `/auth/verify?token=${magic.body.devLink}&redirect=${encodeURIComponent("https://evil.test/phish")}`
+    );
+
+    expect(verify.status).toBe(302);
+    expect(verify.headers.location).toBe("/staff");
+  });
+
   it("returns null for an unauthenticated session", async () => {
     const response = await request(createApp()).get("/api/session");
 

@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { Navigate, Outlet, useRoutes } from "react-router-dom";
 import { ClientShell, RouteGuard, StaffShell } from "@/client/AppShell";
 import { LoadingState, useRouteState } from "@/client/RouteState";
@@ -80,11 +79,4 @@ export const appRoutes = [
 
 export function AppRouter() {
   return useRoutes(appRoutes);
-}
-
-export function AuthVerifyRedirect() {
-  useEffect(() => {
-    window.location.assign(window.location.pathname + window.location.search);
-  }, []);
-  return <LoadingState label="Signing in…" />;
 }

@@ -2,6 +2,13 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { requestMagicLink } from "@/client/api";
+import { safeRedirectPath } from "@/lib/safe-redirect";
+
+function buildVerifyHref(token: string, redirect: string | null) {
+  const params = new URLSearchParams({ token });
+  if (redirect) params.set("redirect", redirect);
+  return `/auth/verify?${params.toString()}`;
+}
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -10,6 +17,7 @@ export function LoginPage() {
   const email = searchParams.get("email");
   const devlink = searchParams.get("devlink");
   const error = searchParams.get("error");
+  const redirect = safeRedirectPath(searchParams.get("redirect"));
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -28,7 +36,12 @@ export function LoginPage() {
     setSubmitting(false);
 
     if (!result.ok) {
-      navigate(`/login?error=notfound&email=${encodeURIComponent(nextEmail)}`);
+      const params = new URLSearchParams({
+        error: "notfound",
+        email: nextEmail,
+      });
+      if (redirect) params.set("redirect", redirect);
+      navigate(`/login?${params.toString()}`);
       return;
     }
 
@@ -37,6 +50,7 @@ export function LoginPage() {
       email: result.email ?? nextEmail,
     });
     if (result.devLink) params.set("devlink", result.devLink);
+    if (redirect) params.set("redirect", redirect);
     navigate(`/login?${params.toString()}`);
   }
 
@@ -63,12 +77,12 @@ export function LoginPage() {
               {devlink ? (
                 <div className="wf-panel wf-dash p-4">
                   <p className="wf-tag mb-2">Dev inbox</p>
-                  <Link
-                    to={`/auth/verify?token=${devlink}`}
+                  <a
+                    href={buildVerifyHref(devlink, redirect)}
                     className="break-all text-sm text-[var(--text-link)] underline"
                   >
                     Open sign-in link
-                  </Link>
+                  </a>
                 </div>
               ) : null}
               <Link to="/login" className="wf-link text-sm text-[var(--text-secondary)]">

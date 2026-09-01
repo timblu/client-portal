@@ -1,5 +1,6 @@
 import type { Request, Response, Router } from "express";
 import { clearSession, consumeMagicLink, createMagicLink, createSession, getCurrentUser } from "@/lib/auth";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 import { devSwitchingEnabled, listSwitchTargets, resolveSwitchTarget } from "@/server/dev";
 import { sendBadRequest, sendForbidden, sendNotFound } from "@/server/errors";
 import { serializeUser } from "@/server/serialize";
@@ -42,7 +43,8 @@ export function registerAuthRoutes(router: Router) {
     }
 
     setSessionCookie(response, result.session.token, result.session.expiresAt);
-    const destination = result.user.role === "STAFF" ? "/staff" : "/client";
+    const defaultDestination = result.user.role === "STAFF" ? "/staff" : "/client";
+    const destination = safeRedirectPath(String(request.query.redirect ?? "")) ?? defaultDestination;
     response.redirect(destination);
   });
 

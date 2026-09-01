@@ -1,4 +1,4 @@
-import { type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { apiAction, ApiError } from "@/client/api";
 import { ErrorState, LoadingState, useRevalidate, useRouteData } from "@/client/RouteState";
@@ -69,6 +69,7 @@ type DeliverableViewData = Parameters<typeof DeliverableViewer>[0];
 export function StaffHomePage() {
   const navigate = useNavigate();
   const revalidate = useRevalidate();
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const { data, error, loading } = useRouteData<StaffCompaniesData>("/api/staff/companies");
 
   async function handleCreateCompany(event: FormEvent<HTMLFormElement>) {
@@ -77,7 +78,12 @@ export function StaffHomePage() {
     const name = String(formData.get("name") ?? "").trim();
     if (!name) return;
     const result = await apiAction("create-company", { name });
-    if (result.ok && result.redirectTo) {
+    if (!result.ok) {
+      setMutationError(result.error);
+      return;
+    }
+    setMutationError(null);
+    if (result.redirectTo) {
       navigate(result.redirectTo);
       return;
     }
@@ -104,6 +110,7 @@ export function StaffHomePage() {
 
       <details className="mt-4">
         <summary className="cursor-pointer text-sm text-[var(--text-secondary)]">New company</summary>
+        {mutationError ? <p className="mt-3 text-sm text-[var(--text-secondary)]">{mutationError}</p> : null}
         <form onSubmit={handleCreateCompany} className="mt-3 flex max-w-sm gap-2">
           <input name="name" placeholder="Company name" required className="wf-input flex-1" />
           <button type="submit" className="wf-btn-solid">
@@ -266,6 +273,7 @@ export function StaffProjectPage() {
   const { projectId = "" } = useParams();
   const navigate = useNavigate();
   const revalidate = useRevalidate();
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const { data, error, loading } = useRouteData<StaffProjectData>(`/api/staff/projects/${projectId}`);
 
   async function handleCreateDeliverable(event: FormEvent<HTMLFormElement>) {
@@ -280,7 +288,12 @@ export function StaffProjectPage() {
       prototypeUrl: String(formData.get("prototypeUrl") ?? ""),
       content: String(formData.get("content") ?? ""),
     });
-    if (result.ok && result.redirectTo) {
+    if (!result.ok) {
+      setMutationError(result.error);
+      return;
+    }
+    setMutationError(null);
+    if (result.redirectTo) {
       navigate(result.redirectTo);
       return;
     }
@@ -333,6 +346,7 @@ export function StaffProjectPage() {
 
       <details className="mt-10">
         <summary className="cursor-pointer text-sm text-[var(--text-secondary)]">New deliverable</summary>
+        {mutationError ? <p className="mt-4 text-sm text-[var(--text-secondary)]">{mutationError}</p> : null}
         <form onSubmit={handleCreateDeliverable} className="mt-4 grid max-w-xl gap-3">
           <input type="hidden" name="projectId" value={project.id} />
           <div>
@@ -395,6 +409,7 @@ export function StaffDeliverablePage() {
   const [searchParams] = useSearchParams();
   const version = searchParams.get("version") ?? undefined;
   const revalidate = useRevalidate();
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const deliverablePath = `/api/staff/deliverables/${deliverableId}${
     version ? `?version=${encodeURIComponent(version)}` : ""
   }`;
@@ -410,7 +425,12 @@ export function StaffDeliverablePage() {
       prototypeUrl: String(formData.get("prototypeUrl") ?? ""),
       content: String(formData.get("content") ?? ""),
     });
-    if (result.ok) revalidate();
+    if (!result.ok) {
+      setMutationError(result.error);
+      return;
+    }
+    setMutationError(null);
+    revalidate();
   }
 
   if (loading) return <LoadingState />;
@@ -424,6 +444,7 @@ export function StaffDeliverablePage() {
       <DeliverableViewer {...data} onMutate={revalidate} />
       <details className="border-t border-[var(--border-subtle)] px-5 py-3">
         <summary className="cursor-pointer text-xs text-[var(--text-secondary)]">New version</summary>
+        {mutationError ? <p className="mt-3 text-xs text-[var(--text-secondary)]">{mutationError}</p> : null}
         <form onSubmit={handleAddVersion} className="mt-3 grid max-w-xl gap-3">
           <input type="hidden" name="deliverableId" value={data.deliverableId} />
           <div>

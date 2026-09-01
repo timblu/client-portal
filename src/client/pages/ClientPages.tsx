@@ -98,6 +98,9 @@ export function ClientHomePage() {
             </span>
           </Link>
         ))}
+        {data.projects.length === 0 ? (
+          <p className="py-8 text-sm text-[var(--text-secondary)]">No projects yet.</p>
+        ) : null}
       </div>
     </PageShell>
   );
@@ -204,7 +207,7 @@ export function ClientMembersPage() {
   const { data, error, loading } = useRouteData<ClientMembersData>("/api/client/members");
 
   if (loading) return <LoadingState />;
-  if (error instanceof ApiError && error.status === 404) {
+  if (error instanceof ApiError && (error.status === 404 || error.status === 403)) {
     return <ErrorState message="Members not found." />;
   }
   if (error || !data) return <ErrorState message={error?.message ?? "Unable to load members."} />;
@@ -226,7 +229,7 @@ export function ClientMemberDetailPage() {
   const { data, error, loading } = useRouteData<ClientMemberData>(`/api/client/members/${memberId}`);
 
   if (loading) return <LoadingState />;
-  if (error instanceof ApiError && error.status === 404) {
+  if (error instanceof ApiError && (error.status === 404 || error.status === 403)) {
     return <ErrorState message="Member not found." />;
   }
   if (error || !data) return <ErrorState message={error?.message ?? "Unable to load member."} />;
