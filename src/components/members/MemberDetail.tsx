@@ -1,17 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import {
-  addProjectAccess,
-  changeProjectRole,
-  demoteToMember,
-  promoteToCompanyAdmin,
-  removeMemberFromCompany,
-  removeProjectAccess,
-  updateMemberName,
-} from "@/lib/actions";
+import { useRef, useState, useTransition } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { apiAction } from "@/client/api";
+import { useRevalidate } from "@/client/RouteState";
 import { ConfirmDialog } from "@/components/members/ConfirmDialog";
 import type { DirectoryMember, DirectoryProject } from "@/components/members/types";
 
@@ -40,12 +32,10 @@ export function MemberDetail({
   backHref: string;
   backLabel: string;
 }) {
-  const router = useRouter();
+  const navigate = useNavigate();
+  const revalidate = useRevalidate();
   const [, startTransition] = useTransition();
   const [name, setName] = useState(member.name);
-  useEffect(() => {
-    setName(member.name);
-  }, [member.name]);
   const [banner, setBanner] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<"promote" | "demote" | "remove" | null>(null);
   const [lastAdminChecked, setLastAdminChecked] = useState(false);
@@ -55,24 +45,23 @@ export function MemberDetail({
   const clientLastAdminLock = variant === "client" && isLastAdmin;
   const assignedCount = member.projectMemberships.length;
 
-  function run(action: () => Promise<unknown>) {
-    startTransition(async () => {
-      await action();
-      router.refresh();
+  function run(action: () => Promise<void>) {
+    startTransition(() => {
+      void action();
     });
   }
 
-  function confirmLastAdminField() {
-    const formData = new FormData();
-    formData.set("companyId", companyId);
-    formData.set("memberId", member.id);
-    if (variant === "staff" && isLastAdmin) formData.set("confirmedLastAdmin", "true");
-    return formData;
+  function memberBody(extra: Record<string, unknown> = {}) {
+    return {
+      companyId,
+      memberId: member.id,
+      ...extra,
+    };
   }
 
   return (
     <div>
-      <Link href={backHref} className="wf-back">
+      <Link to={backHref} className="wf-back">
         {backLabel}
       </Link>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
@@ -111,9 +100,7 @@ export function MemberDetail({
         )}
       </div>
 
-      {banner ? (
-        <p className="mt-4 text-sm text-[var(--text-secondary)]">{banner}</p>
-      ) : null}
+      {banner ? <p className="mt-4 text-sm text-[var(--text-secondary)]">{banner}</p> : null}
 
       <section className="mt-10 border-t border-[var(--border-subtle)] pt-8">
         <h2 className="mb-3 text-[0.6875rem] font-medium uppercase tracking-[0.04em] text-[var(--text-secondary)]">
@@ -123,11 +110,10 @@ export function MemberDetail({
           className="grid max-w-xl gap-3"
           onSubmit={(e) => {
             e.preventDefault();
-            const formData = new FormData();
-            formData.set("companyId", companyId);
-            formData.set("memberId", member.id);
-            formData.set("name", name);
-            run(() => updateMemberName(formData));
+            run(async () => {
+              const result = await apiAction("update-member-name", memberBody({ name }));
+              if (result.ok) revalidate();
+            });
           }}
         >
           <div>
@@ -179,12 +165,13 @@ export function MemberDetail({
                         aria-label={`Role on ${project.name}`}
                         value={membership.role}
                         onChange={(e) => {
-                          const formData = new FormData();
-                          formData.set("companyId", companyId);
-                          formData.set("memberId", member.id);
-                          formData.set("projectId", project.id);
-                          formData.set("role", e.target.value);
-                          run(() => changeProjectRole(formData));
+                          run(async () => {
+                            const result = await apiAction(
+                              "change-project-role",
+                              memberBody({ projectId: project.id, role: e.target.value })
+                            );
+                            if (result.ok) revalidate();
+                          });
                         }}
                       >
                         <option value="REVIEWER">Reviewer</option>
@@ -208,11 +195,13 @@ export function MemberDetail({
                                 type="button"
                                 className="wf-btn-solid"
                                 onClick={() => {
-                                  const formData = new FormData();
-                                  formData.set("companyId", companyId);
-                                  formData.set("memberId", member.id);
-                                  formData.set("projectId", project.id);
-                                  run(() => removeProjectAccess(formData));
+                                  run(async () => {
+                                    const result = await apiAction(
+                                      "remove-project-access",
+                                      memberBody({ projectId: project.id })
+                                    );
+                                    if (result.ok) revalidate();
+                                  });
                                 }}
                               >
                                 Remove
@@ -232,11 +221,13 @@ export function MemberDetail({
                           type="button"
                           className="wf-btn"
                           onClick={() => {
-                            const formData = new FormData();
-                            formData.set("companyId", companyId);
-                            formData.set("memberId", member.id);
-                            formData.set("projectId", project.id);
-                            run(() => removeProjectAccess(formData));
+                            run(async () => {
+                              const result = await apiAction(
+                                "remove-project-access",
+                                memberBody({ projectId: project.id })
+                              );
+                              if (result.ok) revalidate();
+                            });
                           }}
                         >
                           Remove
@@ -250,11 +241,13 @@ export function MemberDetail({
                         type="button"
                         className="wf-btn"
                         onClick={() => {
-                          const formData = new FormData();
-                          formData.set("companyId", companyId);
-                          formData.set("memberId", member.id);
-                          formData.set("projectId", project.id);
-                          run(() => addProjectAccess(formData));
+                          run(async () => {
+                            const result = await apiAction(
+                              "add-project-access",
+                              memberBody({ projectId: project.id })
+                            );
+                            if (result.ok) revalidate();
+                          });
                         }}
                       >
                         Add
@@ -311,10 +304,10 @@ export function MemberDetail({
         onCancel={() => setConfirm(null)}
         onConfirm={() => {
           setConfirm(null);
-          const formData = new FormData();
-          formData.set("companyId", companyId);
-          formData.set("memberId", member.id);
-          run(() => promoteToCompanyAdmin(formData));
+          run(async () => {
+            const result = await apiAction("promote-to-company-admin", memberBody());
+            if (result.ok) revalidate();
+          });
         }}
       >
         <p>
@@ -333,10 +326,16 @@ export function MemberDetail({
         }}
         onConfirm={() => {
           setConfirm(null);
-          const formData = confirmLastAdminField();
           run(async () => {
-            const result = await demoteToMember(formData);
-            setBanner(demoteBanner(result.projectCount));
+            const result = await apiAction("demote-to-member", {
+              ...memberBody(),
+              confirmedLastAdmin: variant === "staff" && isLastAdmin ? true : undefined,
+            });
+            if (result.ok) {
+              const data = result.data as { projectCount?: number } | undefined;
+              setBanner(demoteBanner(data?.projectCount ?? 0));
+              revalidate();
+            }
           });
         }}
         checkbox={
@@ -372,7 +371,17 @@ export function MemberDetail({
         }}
         onConfirm={() => {
           setConfirm(null);
-          run(() => removeMemberFromCompany(confirmLastAdminField()));
+          run(async () => {
+            const result = await apiAction("remove-member-from-company", {
+              ...memberBody(),
+              confirmedLastAdmin: variant === "staff" && isLastAdmin ? true : undefined,
+            });
+            if (result.ok && result.redirectTo) {
+              navigate(result.redirectTo);
+              return;
+            }
+            if (result.ok) revalidate();
+          });
         }}
         checkbox={
           variant === "staff" && isLastAdmin

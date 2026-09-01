@@ -1,8 +1,10 @@
 "use client";
 
+import { useNavigate } from "react-router-dom";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { switchToUser, type SwitchTarget } from "@/lib/dev-accounts";
+import { apiAction, logout, type SwitchTarget } from "@/client/api";
 import { initials } from "@/lib/format";
+import { useRouteState } from "@/client/RouteState";
 
 export function AccountCluster({
   userName,
@@ -15,6 +17,21 @@ export function AccountCluster({
   currentUserId?: string;
   switchTargets?: SwitchTarget[];
 }) {
+  const navigate = useNavigate();
+  const { refreshSession } = useRouteState();
+
+  async function handleSwitch(userId: string) {
+    const result = await apiAction("switch-user", { userId });
+    if (!result.ok) return;
+    await refreshSession();
+    navigate(result.redirectTo ?? "/");
+  }
+
+  async function handleLogout() {
+    await logout();
+    navigate("/login");
+  }
+
   return (
     <div className="flex items-center gap-2">
       <ThemeToggle />
@@ -35,35 +52,36 @@ export function AccountCluster({
               {switchTargets.map((target) => {
                 const isCurrent = target.id === currentUserId;
                 return (
-                  <form key={target.id} action={switchToUser}>
-                    <input type="hidden" name="userId" value={target.id} />
-                    <button
-                      type="submit"
-                      disabled={isCurrent}
-                      aria-current={isCurrent ? "true" : undefined}
-                      className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-[var(--surface-sunken)] disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
-                    >
-                      <span className="block font-medium text-[var(--text-primary)]">
-                        {target.name}
-                        {isCurrent && " · current"}
-                      </span>
-                      <span className="block text-[0.6875rem] text-[var(--text-secondary)]">
-                        {target.companyName
-                          ? `${target.roleLabel} · ${target.companyName}`
-                          : target.roleLabel}
-                      </span>
-                    </button>
-                  </form>
+                  <button
+                    key={target.id}
+                    type="button"
+                    disabled={isCurrent}
+                    aria-current={isCurrent ? "true" : undefined}
+                    onClick={() => handleSwitch(target.id)}
+                    className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-[var(--surface-sunken)] disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
+                  >
+                    <span className="block font-medium text-[var(--text-primary)]">
+                      {target.name}
+                      {isCurrent && " · current"}
+                    </span>
+                    <span className="block text-[0.6875rem] text-[var(--text-secondary)]">
+                      {target.companyName
+                        ? `${target.roleLabel} · ${target.companyName}`
+                        : target.roleLabel}
+                    </span>
+                  </button>
                 );
               })}
               <div className="my-1.5 h-px bg-[var(--border-subtle)]" />
             </>
           )}
-          <form action="/auth/logout" method="post">
-            <button type="submit" className="wf-link-muted block w-full px-2 py-1.5 text-left">
-              Sign out
-            </button>
-          </form>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="wf-link-muted block w-full px-2 py-1.5 text-left"
+          >
+            Sign out
+          </button>
         </div>
       </details>
     </div>

@@ -4,8 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Review Portal</title>
+    <script>
+      (function(){try{var t=localStorage.getItem("rp-theme");var d=t==="dark"||(t!=="light"&&window.matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);}catch(e){}})();
+    </script>
   </head>
-  <body>
-    <div id="root"></div>
+  <body class="h-full antialiased">
+    <div id="root" class="flex min-h-full flex-col"></div>
+    <script type="module" src="/src/client/main.tsx"></script>
   </body>
 </html>

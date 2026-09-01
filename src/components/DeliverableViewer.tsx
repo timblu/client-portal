@@ -1,14 +1,8 @@
 "use client";
 
 import { useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import {
-  addReply,
-  addThread,
-  submitDecision,
-  toggleThreadPinned,
-  toggleThreadResolved,
-} from "@/lib/actions";
+import { Link, useNavigate } from "react-router-dom";
+import { apiAction } from "@/client/api";
 import { DecisionBadge } from "@/components/DecisionBadge";
 import { AccountCluster } from "@/components/AccountCluster";
 import { formatDateTime, initials } from "@/lib/format";
@@ -64,6 +58,7 @@ export function DeliverableViewer({
   siblings = [],
   crumb,
   chrome,
+  onMutate,
 }: {
   deliverableId: string;
   title: string;
@@ -74,8 +69,9 @@ export function DeliverableViewer({
   siblings?: SiblingDeliverable[];
   crumb?: { href: string; label: string };
   chrome?: { homeHref: string; userName: string; roleLabel: string };
+  onMutate?: () => void;
 }) {
-  const router = useRouter();
+  const navigate = useNavigate();
   const [, startTransition] = useTransition();
   const canvasRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<"interact" | "comment">("comment");
@@ -122,8 +118,13 @@ export function DeliverableViewer({
     setDraftPin(null);
     setDraftBody("");
     startTransition(async () => {
-      await addThread(activeVersion.id, x, y, body);
-      router.refresh();
+      await apiAction("add-thread", {
+        versionId: activeVersion.id,
+        xPct: x,
+        yPct: y,
+        body,
+      });
+      onMutate?.();
     });
   }
 
@@ -132,8 +133,8 @@ export function DeliverableViewer({
     if (!body?.trim()) return;
     setReplyDrafts((prev) => ({ ...prev, [threadId]: "" }));
     startTransition(async () => {
-      await addReply(threadId, body);
-      router.refresh();
+      await apiAction("add-reply", { threadId, body });
+      onMutate?.();
     });
   }
 
@@ -150,8 +151,12 @@ export function DeliverableViewer({
     setDecisionComment("");
     setConfirmOpenThreads(false);
     startTransition(async () => {
-      await submitDecision(activeVersion.id, action, comment);
-      router.refresh();
+      await apiAction("submit-decision", {
+        versionId: activeVersion.id,
+        decisionState: action,
+        comment,
+      });
+      onMutate?.();
     });
   }
 
@@ -161,14 +166,14 @@ export function DeliverableViewer({
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
         <div className="flex items-center gap-3">
           {chrome ? (
-            <a href={chrome.homeHref} className="text-sm font-semibold tracking-tight">
+            <Link to={chrome.homeHref} className="text-sm font-semibold tracking-tight">
               Review Portal
-            </a>
+            </Link>
           ) : null}
           {crumb ? (
-            <a href={crumb.href} className="wf-back">
+            <Link to={crumb.href} className="wf-back">
               {crumb.label}
-            </a>
+            </Link>
           ) : null}
           <div>
             <h1 className="text-sm font-semibold">{title}</h1>
@@ -182,7 +187,7 @@ export function DeliverableViewer({
             className="wf-input wf-select text-xs"
             value={activeVersion.id}
             onChange={(e) =>
-              router.push(`${basePath}/deliverables/${deliverableId}?version=${e.target.value}`)
+              navigate(`${basePath}/deliverables/${deliverableId}?version=${e.target.value}`)
             }
           >
             {versions.map((v) => (
@@ -303,8 +308,8 @@ export function DeliverableViewer({
             <ul>
               {siblings.map((s) => (
                 <li key={s.id}>
-                  <a
-                    href={`${basePath}/deliverables/${s.id}`}
+                  <Link
+                    to={`${basePath}/deliverables/${s.id}`}
                     className={`block border-b border-[var(--border-subtle)] px-4 py-2.5 text-xs last:border-b-0 hover:bg-[var(--surface-sunken)] ${
                       s.id === deliverableId ? "border-l-[3px] border-l-[var(--action-primary-bg)] bg-[var(--surface-sunken)]" : "border-l-[3px] border-l-transparent"
                     }`}
@@ -314,7 +319,7 @@ export function DeliverableViewer({
                       {s.type === "DESIGN" ? "Design" : "Doc"} ·{" "}
                       {s.decisionState === "PENDING" ? "pending" : s.decisionState.toLowerCase().replace("_", " ")}
                     </p>
-                  </a>
+                  </Link>
                 </li>
               ))}
               {siblings.length === 0 ? (
@@ -430,8 +435,11 @@ export function DeliverableViewer({
                         onClick={(e) => {
                           e.stopPropagation();
                           startTransition(async () => {
-                            await toggleThreadPinned(thread.id, !thread.pinnedToTop);
-                            router.refresh();
+                            await apiAction("toggle-thread-pinned", {
+                              threadId: thread.id,
+                              pinned: !thread.pinnedToTop,
+                            });
+                            onMutate?.();
                           });
                         }}
                       >
@@ -442,8 +450,11 @@ export function DeliverableViewer({
                         onClick={(e) => {
                           e.stopPropagation();
                           startTransition(async () => {
-                            await toggleThreadResolved(thread.id, !thread.resolved);
-                            router.refresh();
+                            await apiAction("toggle-thread-resolved", {
+                              threadId: thread.id,
+                              resolved: !thread.resolved,
+                            });
+                            onMutate?.();
                           });
                         }}
                       >

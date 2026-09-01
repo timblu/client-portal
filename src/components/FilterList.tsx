@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { CompanyLogo } from "@/components/CompanyLogo";
 import { ListHead } from "@/components/PageShell";
 
@@ -35,7 +35,7 @@ export function FilterList({
         {filtered.map((row) => (
           <Link
             key={row.id}
-            href={row.href}
+            to={row.href}
             className="wf-row flex items-center justify-between gap-4 py-2.5 hover:bg-[var(--surface-sunken)]"
           >
             <div className="flex min-w-0 items-center gap-3">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { InviteMemberPanel } from "@/components/members/InviteMemberPanel";
 import { MembersDirectory } from "@/components/members/MembersDirectory";
 import type { DirectoryMember, DirectoryProject } from "@/components/members/types";
@@ -25,7 +25,7 @@ export function MembersWorkspace({
     <>
       <div className="mb-8">
         {headingHref ? (
-          <Link href={headingHref.href} className="wf-back">
+          <Link to={headingHref.href} className="wf-back">
             {headingHref.label}
           </Link>
         ) : null}

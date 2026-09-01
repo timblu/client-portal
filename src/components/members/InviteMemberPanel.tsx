@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import { inviteMember } from "@/lib/actions";
+import { apiAction } from "@/client/api";
+import { useRevalidate } from "@/client/RouteState";
 import { ConfirmDialog } from "@/components/members/ConfirmDialog";
 import type { DirectoryProject } from "@/components/members/types";
 
@@ -21,7 +21,7 @@ export function InviteMemberPanel({
   projects: DirectoryProject[];
   onClose: () => void;
 }) {
-  const router = useRouter();
+  const revalidate = useRevalidate();
   const [, startTransition] = useTransition();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -59,23 +59,22 @@ export function InviteMemberPanel({
     }
     if (!name.trim() || !email.trim()) return;
 
-    const formData = new FormData();
-    formData.set("companyId", companyId);
-    formData.set("name", name.trim());
-    formData.set("email", email.trim());
-    formData.set("companyRole", companyRole);
-    formData.set("memberships", JSON.stringify(memberships));
-
-    startTransition(async () => {
-      const result = await inviteMember(formData);
-      if (result?.error) {
-        setError(result.error);
-        setConfirmAdmin(false);
-        return;
-      }
-      onClose();
-      router.refresh();
+    const result = await apiAction("invite-member", {
+      companyId,
+      name: name.trim(),
+      email: email.trim(),
+      companyRole,
+      memberships,
     });
+
+    if (!result.ok) {
+      setError(result.error);
+      setConfirmAdmin(false);
+      return;
+    }
+
+    onClose();
+    revalidate();
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -84,7 +83,9 @@ export function InviteMemberPanel({
       setConfirmAdmin(true);
       return;
     }
-    void submit();
+    startTransition(() => {
+      void submit();
+    });
   }
 
   return (
@@ -218,7 +219,9 @@ export function InviteMemberPanel({
         onCancel={() => setConfirmAdmin(false)}
         onConfirm={() => {
           setConfirmAdmin(false);
-          void submit();
+          startTransition(() => {
+            void submit();
+          });
         }}
       >
         <p>{ADMIN_NOTICE}</p>

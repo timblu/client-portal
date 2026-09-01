@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { AccessSummaryTag } from "@/components/members/AccessSummaryTag";
 import type { DirectoryMember, DirectoryProject } from "@/components/members/types";
 
@@ -160,7 +160,7 @@ export function MembersDirectory({
             const className = "wf-row flex items-center justify-between py-3.5";
             if (rowHref) {
               return (
-                <Link key={member.id} href={rowHref(member.id)} className={`${className} hover:bg-[var(--surface-sunken)]`}>
+                <Link key={member.id} to={rowHref(member.id)} className={`${className} hover:bg-[var(--surface-sunken)]`}>
                   {rowInner(member)}
                 </Link>
               );
