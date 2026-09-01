@@ -1,5 +1,11 @@
 # V1 Design-Approval MVP Implementation Plan
 
+> **Stack note (2026-09-01):** This plan was executed against **Next.js App Router + Server
+> Actions**. The application has since migrated to **Vite + React Router + Express API**; file
+> paths and mutation mechanics below describe the historical Next.js layout, not the current
+> source tree. See
+> [`2026-09-01-vite-react-router-migration.md`](2026-09-01-vite-react-router-migration.md).
+
 > **Status:** Executed directly in the same session as the spec, per explicit instruction to
 > implement without stopping for the usual spec-review gate. This document records what was
 > built against the spec at

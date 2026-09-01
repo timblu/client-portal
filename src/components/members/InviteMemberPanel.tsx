@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo, useState, useTransition } from "react";
 import { apiAction } from "@/client/api";
 import { useRevalidate } from "@/client/RouteState";

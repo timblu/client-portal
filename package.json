@@ -2,6 +2,7 @@
   "name": "client-portal",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:client": "vite",
@@ -9,7 +10,7 @@
     "build": "vite build && tsc -p tsconfig.server.json --noEmit",
     "start": "NODE_ENV=production tsx src/server/index.ts",
     "test": "vitest run",
-    "lint": "eslint",
+    "lint": "eslint .",
     "db:seed": "tsx prisma/seed.ts"
   },
   "prisma": {
@@ -18,13 +19,13 @@
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "express": "^5.2.1",
-    "next": "16.3.0",
     "prisma": "^6.12.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-router-dom": "^7.18.3"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.3",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
@@ -38,12 +39,15 @@
     "concurrently": "^10.0.5",
     "dotenv": "^17.4.2",
     "eslint": "^9",
-    "eslint-config-next": "16.3.0",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.4.0",
     "jsdom": "^29.1.1",
     "supertest": "^7.2.2",
     "tailwindcss": "^4",
     "tsx": "^4.23.12",
     "typescript": "^5",
+    "typescript-eslint": "^8.56.1",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"
   }

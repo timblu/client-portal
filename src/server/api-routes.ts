@@ -1,4 +1,4 @@
-import type { NextFunction, Request, Response, Router } from "express";
+import type { Request, Response, Router } from "express";
 import { isCompanyAdmin } from "@/lib/access";
 import { sendForbidden, sendNotFound } from "@/server/errors";
 import { mutationErrorStatus } from "@/server/mutation-errors";
