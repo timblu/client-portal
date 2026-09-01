@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, useTransition } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { apiAction } from "@/client/api";
+import { useApiAction } from "@/client/RouteState";
 import { DecisionBadge } from "@/components/DecisionBadge";
 import { AccountCluster } from "@/components/AccountCluster";
 import { formatDateTime, initials } from "@/lib/format";
@@ -70,6 +70,7 @@ export function DeliverableViewer({
   onMutate?: () => void;
 }) {
   const navigate = useNavigate();
+  const runAction = useApiAction(); // I6: centralized 401 handling
   const [, startTransition] = useTransition();
   const canvasRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<"interact" | "comment">("comment");
@@ -117,7 +118,7 @@ export function DeliverableViewer({
     setDraftPin(null);
     setDraftBody("");
     startTransition(async () => {
-      const result = await apiAction("add-thread", {
+      const result = await runAction("add-thread", {
         versionId: activeVersion.id,
         xPct: x,
         yPct: y,
@@ -137,7 +138,7 @@ export function DeliverableViewer({
     if (!body?.trim()) return;
     setReplyDrafts((prev) => ({ ...prev, [threadId]: "" }));
     startTransition(async () => {
-      const result = await apiAction("add-reply", { threadId, body });
+      const result = await runAction("add-reply", { threadId, body });
       if (!result.ok) {
         setMutationError(result.error);
         return;
@@ -160,7 +161,7 @@ export function DeliverableViewer({
     setDecisionComment("");
     setConfirmOpenThreads(false);
     startTransition(async () => {
-      const result = await apiAction("submit-decision", {
+      const result = await runAction("submit-decision", {
         versionId: activeVersion.id,
         decisionState: action,
         comment,
@@ -455,7 +456,7 @@ export function DeliverableViewer({
                         onClick={(e) => {
                           e.stopPropagation();
                           startTransition(async () => {
-                            const result = await apiAction("toggle-thread-pinned", {
+                            const result = await runAction("toggle-thread-pinned", {
                               threadId: thread.id,
                               pinned: !thread.pinnedToTop,
                             });
@@ -475,7 +476,7 @@ export function DeliverableViewer({
                         onClick={(e) => {
                           e.stopPropagation();
                           startTransition(async () => {
-                            const result = await apiAction("toggle-thread-resolved", {
+                            const result = await runAction("toggle-thread-resolved", {
                               threadId: thread.id,
                               resolved: !thread.resolved,
                             });

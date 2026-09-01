@@ -193,7 +193,7 @@ export function registerApiRoutes(router: Router) {
       const currentToken = getSessionToken(request);
       const result = await runMutation(action, request.user!, request.body ?? {}, currentToken);
       if (!result.ok) {
-        const status = mutationErrorStatus(result.error);
+        const status = mutationErrorStatus(result.error, result.code); // M7: typed code takes precedence
         response.status(status).json({ error: result.error });
         return;
       }

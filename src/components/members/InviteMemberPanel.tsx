@@ -1,6 +1,5 @@
 import { useMemo, useState, useTransition } from "react";
-import { apiAction } from "@/client/api";
-import { useRevalidate } from "@/client/RouteState";
+import { useApiAction, useRevalidate } from "@/client/RouteState";
 import { ConfirmDialog } from "@/components/members/ConfirmDialog";
 import type { DirectoryProject } from "@/components/members/types";
 
@@ -20,6 +19,7 @@ export function InviteMemberPanel({
   onClose: () => void;
 }) {
   const revalidate = useRevalidate();
+  const runAction = useApiAction(); // I6
   const [, startTransition] = useTransition();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -57,7 +57,7 @@ export function InviteMemberPanel({
     }
     if (!name.trim() || !email.trim()) return;
 
-    const result = await apiAction("invite-member", {
+    const result = await runAction("invite-member", {
       companyId,
       name: name.trim(),
       email: email.trim(),

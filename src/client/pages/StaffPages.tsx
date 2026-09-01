@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { apiAction, ApiError } from "@/client/api";
-import { ErrorState, LoadingState, useRevalidate, useRouteData } from "@/client/RouteState";
+import { ApiError } from "@/client/api";
+import { ErrorState, LoadingState, useApiAction, useRevalidate, useRouteData } from "@/client/RouteState";
 import { FilterList } from "@/components/FilterList";
 import { PageHeader, PageShell, ListHead } from "@/components/PageShell";
 import { CompanyLogo } from "@/components/CompanyLogo";
@@ -69,6 +69,7 @@ type DeliverableViewData = Parameters<typeof DeliverableViewer>[0];
 export function StaffHomePage() {
   const navigate = useNavigate();
   const revalidate = useRevalidate();
+  const runAction = useApiAction(); // I6
   const [mutationError, setMutationError] = useState<string | null>(null);
   const { data, error, loading } = useRouteData<StaffCompaniesData>("/api/staff/companies");
 
@@ -77,7 +78,7 @@ export function StaffHomePage() {
     const formData = new FormData(event.currentTarget);
     const name = String(formData.get("name") ?? "").trim();
     if (!name) return;
-    const result = await apiAction("create-company", { name });
+    const result = await runAction("create-company", { name });
     if (!result.ok) {
       setMutationError(result.error);
       return;
@@ -273,13 +274,14 @@ export function StaffProjectPage() {
   const { projectId = "" } = useParams();
   const navigate = useNavigate();
   const revalidate = useRevalidate();
+  const runAction = useApiAction(); // I6
   const [mutationError, setMutationError] = useState<string | null>(null);
   const { data, error, loading } = useRouteData<StaffProjectData>(`/api/staff/projects/${projectId}`);
 
   async function handleCreateDeliverable(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    const result = await apiAction("create-deliverable", {
+    const result = await runAction("create-deliverable", {
       projectId: String(formData.get("projectId") ?? ""),
       title: String(formData.get("title") ?? ""),
       type: String(formData.get("type") ?? "DESIGN"),
@@ -409,6 +411,7 @@ export function StaffDeliverablePage() {
   const [searchParams] = useSearchParams();
   const version = searchParams.get("version") ?? undefined;
   const revalidate = useRevalidate();
+  const runAction = useApiAction(); // I6
   const [mutationError, setMutationError] = useState<string | null>(null);
   const deliverablePath = `/api/staff/deliverables/${deliverableId}${
     version ? `?version=${encodeURIComponent(version)}` : ""
@@ -418,7 +421,7 @@ export function StaffDeliverablePage() {
   async function handleAddVersion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    const result = await apiAction("add-version", {
+    const result = await runAction("add-version", {
       deliverableId: String(formData.get("deliverableId") ?? ""),
       kind: String(formData.get("kind") ?? ""),
       fileUrl: String(formData.get("fileUrl") ?? ""),

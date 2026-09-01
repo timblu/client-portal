@@ -1,7 +1,6 @@
 import { useRef, useState, useTransition } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { apiAction } from "@/client/api";
-import { useRevalidate } from "@/client/RouteState";
+import { useApiAction, useRevalidate } from "@/client/RouteState";
 import { ConfirmDialog } from "@/components/members/ConfirmDialog";
 import type { DirectoryMember, DirectoryProject } from "@/components/members/types";
 
@@ -32,6 +31,7 @@ export function MemberDetail({
 }) {
   const navigate = useNavigate();
   const revalidate = useRevalidate();
+  const runAction = useApiAction(); // I6: centralized 401 handling
   const [, startTransition] = useTransition();
   const [banner, setBanner] = useState<string | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
@@ -120,7 +120,7 @@ export function MemberDetail({
           initialName={member.name}
           onSave={(name) => {
             run(async () => {
-              if (await runMutation(() => apiAction("update-member-name", memberBody({ name })))) {
+              if (await runMutation(() => runAction("update-member-name", memberBody({ name })))) {
                 revalidate();
               }
             });
@@ -165,7 +165,7 @@ export function MemberDetail({
                           run(async () => {
                             if (
                               await runMutation(() =>
-                                apiAction(
+                                runAction(
                                   "change-project-role",
                                   memberBody({ projectId: project.id, role: e.target.value })
                                 )
@@ -200,7 +200,7 @@ export function MemberDetail({
                                   run(async () => {
                                     if (
                                       await runMutation(() =>
-                                        apiAction(
+                                        runAction(
                                           "remove-project-access",
                                           memberBody({ projectId: project.id })
                                         )
@@ -231,7 +231,7 @@ export function MemberDetail({
                             run(async () => {
                               if (
                                 await runMutation(() =>
-                                  apiAction(
+                                  runAction(
                                     "remove-project-access",
                                     memberBody({ projectId: project.id })
                                   )
@@ -256,7 +256,7 @@ export function MemberDetail({
                           run(async () => {
                             if (
                               await runMutation(() =>
-                                apiAction("add-project-access", memberBody({ projectId: project.id }))
+                                runAction("add-project-access", memberBody({ projectId: project.id }))
                               )
                             ) {
                               revalidate();
@@ -319,7 +319,7 @@ export function MemberDetail({
         onConfirm={() => {
           setConfirm(null);
           run(async () => {
-            if (await runMutation(() => apiAction("promote-to-company-admin", memberBody()))) {
+            if (await runMutation(() => runAction("promote-to-company-admin", memberBody()))) {
               revalidate();
             }
           });
@@ -342,7 +342,7 @@ export function MemberDetail({
         onConfirm={() => {
           setConfirm(null);
           run(async () => {
-            const result = await apiAction("demote-to-member", {
+            const result = await runAction("demote-to-member", {
               ...memberBody(),
               confirmedLastAdmin: variant === "staff" && isLastAdmin ? true : undefined,
             });
@@ -390,7 +390,7 @@ export function MemberDetail({
         onConfirm={() => {
           setConfirm(null);
           run(async () => {
-            const result = await apiAction("remove-member-from-company", {
+            const result = await runAction("remove-member-from-company", {
               ...memberBody(),
               confirmedLastAdmin: variant === "staff" && isLastAdmin ? true : undefined,
             });

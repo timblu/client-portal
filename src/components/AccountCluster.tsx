@@ -1,8 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { apiAction, logout, type SwitchTarget } from "@/client/api";
+import { logout, type SwitchTarget } from "@/client/api";
 import { initials } from "@/lib/format";
-import { useRouteState } from "@/client/RouteState";
+import { useApiAction, useRouteState } from "@/client/RouteState";
 
 export function AccountCluster({
   userName,
@@ -17,16 +17,18 @@ export function AccountCluster({
 }) {
   const navigate = useNavigate();
   const { refreshSession } = useRouteState();
+  const runAction = useApiAction(); // I6: centralized 401 handling
 
   async function handleSwitch(userId: string) {
-    const result = await apiAction("switch-user", { userId });
+    const result = await runAction("switch-user", { userId });
     if (!result.ok) return;
     await refreshSession();
     navigate(result.redirectTo ?? "/");
   }
 
   async function handleLogout() {
-    await logout();
+    await logout(); // clears server-side session cookie
+    await refreshSession(); // I6: immediately clear client-side session state
     navigate("/login");
   }
 

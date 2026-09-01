@@ -471,6 +471,101 @@ describe("deliverable viewer and members", () => {
     });
   });
 
+  it("does not flash stale member data when navigating to a different member (I1)", async () => {
+    // Simulate m1 → m2 navigation. Old m1 data must NOT appear on the m2 route.
+    let m2ResolveFn!: () => void;
+    const m2Pending = new Promise<void>((resolve) => {
+      m2ResolveFn = resolve;
+    });
+
+    mockFetch({
+      "/api/session": () => new Response(JSON.stringify(staffSession), { status: 200 }),
+      "/api/staff/companies/c1/members": () =>
+        new Response(
+          JSON.stringify({
+            companyId: "c1",
+            companyName: "Northwind Retail",
+            members: [
+              {
+                id: "m1",
+                name: "Alice",
+                email: "alice@northwind.test",
+                companyRole: "COMPANY_ADMIN",
+                createdAt: "2026-01-01T00:00:00.000Z",
+                projectMemberships: [],
+              },
+              {
+                id: "m2",
+                name: "Bob",
+                email: "bob@northwind.test",
+                companyRole: "MEMBER",
+                createdAt: "2026-01-01T00:00:00.000Z",
+                projectMemberships: [],
+              },
+            ],
+            projects: [],
+          }),
+          { status: 200 }
+        ),
+      "/api/staff/companies/c1/members/m1": () =>
+        new Response(
+          JSON.stringify({
+            companyId: "c1",
+            member: {
+              id: "m1",
+              name: "Alice",
+              email: "alice@northwind.test",
+              companyRole: "COMPANY_ADMIN",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              projectMemberships: [],
+            },
+            projects: [],
+            isLastAdmin: false,
+          }),
+          { status: 200 }
+        ),
+      "/api/staff/companies/c1/members/m2": async () => {
+        await m2Pending; // stall so we can check no stale m1 data appears
+        return new Response(
+          JSON.stringify({
+            companyId: "c1",
+            member: {
+              id: "m2",
+              name: "Bob",
+              email: "bob@northwind.test",
+              companyRole: "MEMBER",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              projectMemberships: [],
+            },
+            projects: [],
+            isLastAdmin: false,
+          }),
+          { status: 200 }
+        );
+      },
+    });
+
+    const user = userEvent.setup();
+    renderAt("/staff/companies/c1/members");
+    await waitFor(() => screen.getByRole("heading", { name: "Members" }));
+
+    // Navigate to Alice (m1)
+    await user.click(screen.getByRole("link", { name: /Alice/i }));
+    await waitFor(() => screen.getByRole("heading", { name: "Alice" }));
+
+    // Navigate back to directory, then to Bob (m2) — m2 fetch is stalled
+    await user.click(screen.getByRole("link", { name: /Members/i }));
+    await waitFor(() => screen.getByRole("heading", { name: "Members" }));
+    await user.click(screen.getByRole("link", { name: /Bob/i }));
+
+    // While m2 is loading, Alice's name must NOT appear (I1: no stale-data flash)
+    expect(screen.queryByRole("heading", { name: "Alice" })).not.toBeInTheDocument();
+
+    // Resolve m2 and confirm Bob's page loads correctly
+    m2ResolveFn();
+    await waitFor(() => screen.getByRole("heading", { name: "Bob" }));
+  });
+
   it("shows not-found for non-admin client members route", async () => {
     mockFetch({
       "/api/session": () =>

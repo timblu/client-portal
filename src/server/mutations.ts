@@ -4,16 +4,16 @@ import { canAccessProject, canApproveProject, type AccessUser } from "@/lib/acce
 import {
   assertCanManageMembers,
   assertLastAdminMutation,
-  memberPathsToRefresh,
   requireActiveCompanyMember,
 } from "@/lib/members";
 import { notifyAllStaff, notifyCompany } from "@/lib/notifications";
 import { clearSession, createSession } from "@/lib/auth";
 import { resolveSwitchTarget } from "@/server/dev";
+import type { MutationErrorCode } from "@/server/mutation-errors";
 
 export type MutationResult =
   | { ok: true; redirectTo?: string; data?: unknown; session?: { token: string; expiresAt: Date } }
-  | { ok: false; error: string };
+  | { ok: false; error: string; code?: MutationErrorCode };
 
 function asAccessUser(user: User): AccessUser {
   return {
@@ -29,12 +29,12 @@ function success(redirectTo?: string, data?: unknown): MutationResult {
   return { ok: true, redirectTo, data };
 }
 
-function failure(error: string): MutationResult {
-  return { ok: false, error };
+function failure(error: string, code?: MutationErrorCode): MutationResult {
+  return code ? { ok: false, error, code } : { ok: false, error };
 }
 
 export async function createCompany(actor: User, body: Record<string, unknown>): Promise<MutationResult> {
-  if (actor.role !== "STAFF") return failure("Only staff can create companies.");
+  if (actor.role !== "STAFF") return failure("Only staff can create companies.", "FORBIDDEN");
 
   const name = String(body.name ?? "").trim();
   if (!name) return failure("Company name is required.");
@@ -138,7 +138,7 @@ export async function inviteMember(actor: User, body: Record<string, unknown>): 
     });
   }
 
-  return success(undefined, { refreshPaths: memberPathsToRefresh(companyId) });
+  return success(); // M8: refreshPaths removed; client uses revalidate()
 }
 
 export async function updateMemberName(actor: User, body: Record<string, unknown>): Promise<MutationResult> {
@@ -155,7 +155,7 @@ export async function updateMemberName(actor: User, body: Record<string, unknown
   }
 
   await db.user.update({ where: { id: memberId }, data: { name } });
-  return success(undefined, { refreshPaths: memberPathsToRefresh(companyId, memberId) });
+  return success(); // M8
 }
 
 export async function promoteToCompanyAdmin(actor: User, body: Record<string, unknown>): Promise<MutationResult> {
@@ -173,7 +173,7 @@ export async function promoteToCompanyAdmin(actor: User, body: Record<string, un
     db.projectMembership.deleteMany({ where: { userId: memberId } }),
     db.user.update({ where: { id: memberId }, data: { companyRole: "COMPANY_ADMIN" } }),
   ]);
-  return success(undefined, { refreshPaths: memberPathsToRefresh(companyId, memberId) });
+  return success(); // M8
 }
 
 export async function demoteToMember(actor: User, body: Record<string, unknown>): Promise<MutationResult> {
@@ -204,10 +204,7 @@ export async function demoteToMember(actor: User, body: Record<string, unknown>)
     }
   });
 
-  return success(undefined, {
-    projectCount: projects.length,
-    refreshPaths: memberPathsToRefresh(companyId, memberId),
-  });
+  return success(undefined, { projectCount: projects.length }); // M8: refreshPaths removed
 }
 
 export async function addProjectAccess(actor: User, body: Record<string, unknown>): Promise<MutationResult> {
@@ -232,7 +229,7 @@ export async function addProjectAccess(actor: User, body: Record<string, unknown
     update: {},
     create: { userId: memberId, projectId, role: "REVIEWER" },
   });
-  return success(undefined, { refreshPaths: memberPathsToRefresh(companyId, memberId) });
+  return success(); // M8
 }
 
 export async function removeProjectAccess(actor: User, body: Record<string, unknown>): Promise<MutationResult> {
@@ -251,7 +248,7 @@ export async function removeProjectAccess(actor: User, body: Record<string, unkn
   }
 
   await db.projectMembership.deleteMany({ where: { userId: memberId, projectId } });
-  return success(undefined, { refreshPaths: memberPathsToRefresh(companyId, memberId) });
+  return success(); // M8
 }
 
 export async function changeProjectRole(actor: User, body: Record<string, unknown>): Promise<MutationResult> {
@@ -260,13 +257,21 @@ export async function changeProjectRole(actor: User, body: Record<string, unknow
   const projectId = String(body.projectId ?? "");
   const role = String(body.role ?? "");
 
+  // I3: validate inputs up-front to avoid unexpected DB errors
+  if (!companyId || !memberId || !projectId) return failure("companyId, memberId, and projectId are required.");
+  if (role !== "REVIEWER" && role !== "APPROVER") return failure("Invalid project role.");
+
   try {
     await assertCanManageMembers(asAccessUser(actor), companyId);
     const member = await requireActiveCompanyMember(memberId, companyId);
     if (member.companyRole === "COMPANY_ADMIN") {
       return failure("Company Admin access is automatic.");
     }
-    if (role !== "REVIEWER" && role !== "APPROVER") return failure("Invalid project role.");
+    // I3: check membership exists before calling update (avoids Prisma P2025 → 500)
+    const membership = await db.projectMembership.findUnique({
+      where: { userId_projectId: { userId: memberId, projectId } },
+    });
+    if (!membership) return failure("Member does not have access to this project.", "NOT_FOUND");
   } catch (error) {
     return failure(error instanceof Error ? error.message : "Forbidden.");
   }
@@ -275,7 +280,7 @@ export async function changeProjectRole(actor: User, body: Record<string, unknow
     where: { userId_projectId: { userId: memberId, projectId } },
     data: { role: role as "REVIEWER" | "APPROVER" },
   });
-  return success(undefined, { refreshPaths: memberPathsToRefresh(companyId, memberId) });
+  return success(); // M8
 }
 
 export async function removeMemberFromCompany(actor: User, body: Record<string, unknown>): Promise<MutationResult> {
@@ -293,87 +298,95 @@ export async function removeMemberFromCompany(actor: User, body: Record<string, 
 
   await db.$transaction([
     db.projectMembership.deleteMany({ where: { userId: memberId } }),
-    db.user.update({
-      where: { id: memberId },
-      data: { removedAt: new Date() },
-    }),
+    db.user.update({ where: { id: memberId }, data: { removedAt: new Date() } }),
+    db.session.deleteMany({ where: { userId: memberId } }), // M5: revoke all sessions on removal
   ]);
 
   return success(
-    actor.role === "STAFF" ? `/staff/companies/${companyId}/members` : "/client/members",
-    { refreshPaths: memberPathsToRefresh(companyId, memberId) }
+    actor.role === "STAFF" ? `/staff/companies/${companyId}/members` : "/client/members"
+    // M8: refreshPaths removed; client uses revalidate()
   );
 }
 
 export async function createProject(actor: User, body: Record<string, unknown>): Promise<MutationResult> {
-  if (actor.role !== "STAFF") return failure("Only staff can create projects.");
+  if (actor.role !== "STAFF") return failure("Only staff can create projects.", "FORBIDDEN");
 
   const companyId = String(body.companyId ?? "");
   const name = String(body.name ?? "").trim();
   if (!companyId || !name) return failure("Company and project name are required.");
 
+  // I5: validate the company exists before creating
+  const company = await db.company.findUnique({ where: { id: companyId } });
+  if (!company) return failure("Company not found.", "NOT_FOUND");
+
   const project = await db.project.create({ data: { companyId, name } });
   return success(`/staff/projects/${project.id}`);
 }
 
+const VALID_DELIVERABLE_TYPES = ["DESIGN", "DOC"] as const;
+const VALID_VERSION_KINDS = ["STATIC_IMAGE", "STATIC_PDF", "MARKDOWN", "PROTOTYPE_URL"] as const;
+
 export async function createDeliverable(actor: User, body: Record<string, unknown>): Promise<MutationResult> {
-  if (actor.role !== "STAFF") return failure("Only staff can create deliverables.");
+  if (actor.role !== "STAFF") return failure("Only staff can create deliverables.", "FORBIDDEN");
 
   const projectId = String(body.projectId ?? "");
   const phaseId = String(body.phaseId ?? "") || null;
-  const type = String(body.type ?? "DESIGN") as "DESIGN" | "DOC";
+  const type = String(body.type ?? "DESIGN");
   const title = String(body.title ?? "").trim();
-  const kind = String(body.kind ?? "STATIC_IMAGE") as
-    | "STATIC_IMAGE"
-    | "STATIC_PDF"
-    | "MARKDOWN"
-    | "PROTOTYPE_URL";
+  const kind = String(body.kind ?? "STATIC_IMAGE");
   const fileUrl = String(body.fileUrl ?? "").trim();
   const content = String(body.content ?? "").trim();
   const prototypeUrl = String(body.prototypeUrl ?? "").trim();
 
   if (!projectId || !title) return failure("Project and title are required.");
+  // I5: validate enums to prevent silent data corruption
+  if (!VALID_DELIVERABLE_TYPES.includes(type as "DESIGN" | "DOC"))
+    return failure("Invalid deliverable type. Must be DESIGN or DOC.");
+  if (!VALID_VERSION_KINDS.includes(kind as "STATIC_IMAGE" | "STATIC_PDF" | "MARKDOWN" | "PROTOTYPE_URL"))
+    return failure("Invalid version kind.");
+  // I5: validate project exists
+  const projectForDeliverable = await db.project.findUnique({ where: { id: projectId } });
+  if (!projectForDeliverable) return failure("Project not found.", "NOT_FOUND");
 
   const deliverable = await db.deliverable.create({
-    data: { projectId, phaseId, type, title },
+    data: { projectId, phaseId, type: type as "DESIGN" | "DOC", title },
   });
 
   await db.version.create({
     data: {
       deliverableId: deliverable.id,
       versionNumber: 1,
-      kind,
+      kind: kind as "STATIC_IMAGE" | "STATIC_PDF" | "MARKDOWN" | "PROTOTYPE_URL",
       fileUrl: fileUrl || null,
       content: content || null,
       prototypeUrl: prototypeUrl || null,
     },
   });
 
-  const project = await db.project.findUnique({ where: { id: projectId } });
-  if (project) {
-    await notifyCompany(
-      project.companyId,
-      `New for review: ${title}`,
-      `${title} is ready for your review on ${project.name}.`
-    );
-  }
+  await notifyCompany(
+    projectForDeliverable.companyId,
+    `New for review: ${title}`,
+    `${title} is ready for your review on ${projectForDeliverable.name}.`
+  );
 
   return success(`/staff/deliverables/${deliverable.id}`);
 }
 
 export async function addVersion(actor: User, body: Record<string, unknown>): Promise<MutationResult> {
-  if (actor.role !== "STAFF") return failure("Only staff can add versions.");
+  if (actor.role !== "STAFF") return failure("Only staff can add versions.", "FORBIDDEN");
 
   const deliverableId = String(body.deliverableId ?? "");
-  const kind = String(body.kind ?? "STATIC_IMAGE") as
-    | "STATIC_IMAGE"
-    | "STATIC_PDF"
-    | "MARKDOWN"
-    | "PROTOTYPE_URL";
+  const kind = String(body.kind ?? "STATIC_IMAGE");
   const fileUrl = String(body.fileUrl ?? "").trim();
   const content = String(body.content ?? "").trim();
   const prototypeUrl = String(body.prototypeUrl ?? "").trim();
   if (!deliverableId) return failure("Deliverable is required.");
+  // I5: validate kind enum
+  if (!VALID_VERSION_KINDS.includes(kind as "STATIC_IMAGE" | "STATIC_PDF" | "MARKDOWN" | "PROTOTYPE_URL"))
+    return failure("Invalid version kind.");
+  // I5: validate deliverable exists to avoid silent errors
+  const deliverableRecord = await db.deliverable.findUnique({ where: { id: deliverableId } });
+  if (!deliverableRecord) return failure("Deliverable not found.", "NOT_FOUND");
 
   const latest = await db.version.findFirst({
     where: { deliverableId },
@@ -384,22 +397,23 @@ export async function addVersion(actor: User, body: Record<string, unknown>): Pr
     data: {
       deliverableId,
       versionNumber: (latest?.versionNumber ?? 0) + 1,
-      kind,
+      kind: kind as "STATIC_IMAGE" | "STATIC_PDF" | "MARKDOWN" | "PROTOTYPE_URL",
       fileUrl: fileUrl || null,
       content: content || null,
       prototypeUrl: prototypeUrl || null,
     },
   });
 
-  const deliverable = await db.deliverable.findUnique({
+  // I5: deliverableRecord already fetched above; use it with project for notification
+  const deliverableWithProject = await db.deliverable.findUnique({
     where: { id: deliverableId },
     include: { project: true },
   });
-  if (deliverable) {
+  if (deliverableWithProject) {
     await notifyCompany(
-      deliverable.project.companyId,
-      `New version for review: ${deliverable.title}`,
-      `v${newVersion.versionNumber} of ${deliverable.title} is ready for your review on ${deliverable.project.name}.`
+      deliverableWithProject.project.companyId,
+      `New version for review: ${deliverableWithProject.title}`,
+      `v${newVersion.versionNumber} of ${deliverableWithProject.title} is ready for your review on ${deliverableWithProject.project.name}.`
     );
   }
 
@@ -511,21 +525,24 @@ export async function toggleThreadPinned(actor: User, body: Record<string, unkno
   }
 }
 
+const VALID_DECISION_STATES = ["APPROVED", "CHANGES_REQUESTED", "REJECTED"] as const;
+
 export async function submitDecision(actor: User, body: Record<string, unknown>): Promise<MutationResult> {
   const versionId = String(body.versionId ?? "");
-  const decisionState = String(body.decisionState ?? "") as
-    | "APPROVED"
-    | "CHANGES_REQUESTED"
-    | "REJECTED";
+  const decisionState = String(body.decisionState ?? "");
   const comment = String(body.comment ?? "");
+
+  // I5: validate enum before hitting DB
+  if (!VALID_DECISION_STATES.includes(decisionState as "APPROVED" | "CHANGES_REQUESTED" | "REJECTED"))
+    return failure("Invalid decision state. Must be APPROVED, CHANGES_REQUESTED, or REJECTED.");
 
   const existing = await db.version.findUnique({
     where: { id: versionId },
     include: { deliverable: { include: { project: true } } },
   });
-  if (!existing) return failure("Version not found.");
+  if (!existing) return failure("Version not found.", "NOT_FOUND");
   if (!(await canApproveProject(asAccessUser(actor), existing.deliverable.project))) {
-    return failure("Only an approver can record a decision.");
+    return failure("Only an approver can record a decision.", "FORBIDDEN");
   }
   if (decisionState !== "APPROVED" && !comment.trim()) {
     return failure("A comment is required for changes requested or rejected.");
@@ -534,7 +551,7 @@ export async function submitDecision(actor: User, body: Record<string, unknown>)
   const version = await db.version.update({
     where: { id: versionId },
     data: {
-      decisionState,
+      decisionState: decisionState as "APPROVED" | "CHANGES_REQUESTED" | "REJECTED",
       decisionComment: comment.trim() || null,
       decidedById: actor.id,
       decidedAt: new Date(),

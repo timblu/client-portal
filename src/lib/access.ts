@@ -1,22 +1,10 @@
-import type { CompanyRole, Prisma, Role } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-
-export type AccessUser = {
-  id: string;
-  role: Role;
-  companyId: string | null;
-  companyRole: CompanyRole | null;
-  removedAt: Date | null;
-};
-
-export type AccessProject = {
-  id: string;
-  companyId: string;
-};
-
-export function isCompanyAdmin(user: AccessUser): boolean {
-  return user.companyRole === "COMPANY_ADMIN" && user.removedAt == null;
-}
+import { isCompanyAdmin } from "@/lib/access-pure";
+// Re-export pure types and helpers so server code can import from one place.
+export type { AccessUser, AccessProject } from "@/lib/access-pure";
+export { isCompanyAdmin } from "@/lib/access-pure";
+import type { AccessUser, AccessProject } from "@/lib/access-pure";
 
 export async function canAccessProject(user: AccessUser, project: AccessProject): Promise<boolean> {
   if (user.role === "STAFF") return true;

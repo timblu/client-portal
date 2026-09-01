@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { isCompanyAdmin } from "@/lib/access";
+import { isCompanyAdmin } from "@/lib/access-pure";
 import { TopNav } from "@/components/TopNav";
 import { LoadingState, useRouteState } from "@/client/RouteState";
 import type { SessionUser } from "@/client/api";

@@ -44,15 +44,5 @@ export async function requireActiveCompanyMember(memberId: string, companyId: st
   return member;
 }
 
-export function memberPathsToRefresh(companyId: string, memberId?: string) {
-  const paths = [
-    `/staff/companies/${companyId}`,
-    `/staff/companies/${companyId}/members`,
-    "/client/members",
-  ];
-  if (memberId) {
-    paths.push(`/staff/companies/${companyId}/members/${memberId}`);
-    paths.push(`/client/members/${memberId}`);
-  }
-  return paths;
-}
+// M8: memberPathsToRefresh removed — mutations no longer return a refreshPaths payload.
+// Client uses revalidate() from useRevalidate() after successful mutations.

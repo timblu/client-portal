@@ -153,6 +153,22 @@ describe("auth routes", () => {
     }
   });
 
+  it("returns 200 for unknown email in production — non-enumerating (M4)", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      const response = await request(createApp())
+        .post("/api/auth/magic-link")
+        .send({ email: "nobody@nowhere.test" });
+
+      // Must not reveal whether the account exists
+      expect(response.status).toBe(200);
+      expect(response.body.ok).toBe(true);
+      expect(response.body.devLink).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("sets secure session cookies in production", async () => {
     vi.stubEnv("NODE_ENV", "production");
     try {

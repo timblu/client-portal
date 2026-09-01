@@ -189,7 +189,8 @@ describe("api routes", () => {
     expect(response.status).toBe(404);
   });
 
-  it("returns JSON 500 for unexpected mutation failures", async () => {
+  it("returns 404 when changing role for a member without project access (I3)", async () => {
+    // priya@northwind.test is a MEMBER but has no access to Loyalty Program → membership missing
     const agent = request.agent(createApp());
     await signInAs(agent, "sam@agency.test");
     const company = await db.company.findFirst({ where: { name: "Northwind Retail" } });
@@ -205,8 +206,27 @@ describe("api routes", () => {
       role: "APPROVER",
     });
 
-    expect(response.status).toBe(500);
-    expect(response.body.error).toBeTruthy();
+    // I3: no membership found → 404 with useful message instead of 500
+    expect(response.status).toBe(404);
+    expect(response.body.error).toMatch(/does not have access/i);
+  });
+
+  it("returns 400 for an invalid role value in change-project-role (I3/I5)", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "sam@agency.test");
+    const company = await db.company.findFirst({ where: { name: "Northwind Retail" } });
+    const member = await findUserByEmail("priya@northwind.test");
+    const project = await db.project.findFirst({ where: { companyId: company!.id } });
+
+    const response = await agent.post("/api/actions/change-project-role").send({
+      companyId: company!.id,
+      memberId: member.id,
+      projectId: project!.id,
+      role: "OWNER", // invalid
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/invalid project role/i);
   });
 
   it("preserves nullable thread coordinates in deliverable responses", async () => {

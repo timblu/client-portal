@@ -43,4 +43,34 @@ describe("server application", () => {
     expect(response.status).toBe(200);
     expect(response.text).toContain("Review Portal");
   });
+
+  it("returns JSON 404 for unknown /api/* paths in production (M1)", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    await mkdir(hiddenDistDir, { recursive: true });
+    await writeFile(path.join(hiddenDistDir, "index.html"), "<main>Review Portal</main>");
+
+    const response = await request(createApp({ distDir: hiddenDistDir })).get("/api/nonexistent-endpoint");
+
+    expect(response.status).toBe(404);
+    expect(response.body.error).toBeTruthy();
+    expect(response.headers["content-type"]).toMatch(/json/);
+  });
+
+  it("returns JSON 404 for unknown /api/* paths in development (M1)", async () => {
+    const response = await request(createApp()).get("/api/this-route-does-not-exist");
+    expect(response.status).toBe(404);
+    expect(response.body.error).toBeTruthy();
+  });
+
+  it("does not serve SPA fallback for /apifoo paths — exact /api prefix exclusion (M2)", async () => {
+    // /apifoo should not match the /api exclusion; if the route doesn't exist it gets 404, not index.html
+    vi.stubEnv("NODE_ENV", "production");
+    await mkdir(hiddenDistDir, { recursive: true });
+    await writeFile(path.join(hiddenDistDir, "index.html"), "<main>Review Portal</main>");
+
+    const response = await request(createApp({ distDir: hiddenDistDir })).get("/apifoo");
+    // /apifoo is NOT an API route — it should fall through to the SPA fallback (or static 404)
+    // The point of M2 is that /apifoo is NOT blocked by the /api exclusion
+    expect(response.status).not.toBe(404);
+  });
 });

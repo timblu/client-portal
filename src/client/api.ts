@@ -47,7 +47,8 @@ async function readJson<T>(response: Response): Promise<T> {
 export async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(path, { credentials: "include" });
   if (response.status === 401) {
-    const body = await readJson<{ error?: string }>(response).catch(() => ({}));
+    // I2: typed catch so `body` is always `{ error?: string }` (avoids TS2339 on `body.error`)
+    const body = await readJson<{ error?: string }>(response).catch((): { error?: string } => ({}));
     throw new ApiError(401, body.error ?? "Not signed in.");
   }
   if (!response.ok) {
@@ -60,7 +61,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 export async function apiAction(
   action: string,
   body: Record<string, unknown> = {}
-): Promise<{ ok: true; redirectTo?: string; data?: unknown } | { ok: false; error: string }> {
+): Promise<{ ok: true; redirectTo?: string; data?: unknown } | { ok: false; error: string; status: number }> {
   const response = await fetch(`/api/actions/${action}`, {
     method: "POST",
     credentials: "include",
@@ -69,7 +70,8 @@ export async function apiAction(
   });
   const result = await readJson<ActionResponse>(response);
   if (!response.ok || !result.ok) {
-    return { ok: false, error: result.error ?? "Request failed." };
+    // I6: include HTTP status so callers can detect 401 and redirect to login
+    return { ok: false, error: result.error ?? "Request failed.", status: response.status };
   }
   return { ok: true, redirectTo: result.redirectTo, data: result.data };
 }

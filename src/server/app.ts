@@ -2,6 +2,7 @@ import path from "node:path";
 import express, { type Application, type NextFunction, type Request, type Response } from "express";
 import { registerApiRoutes } from "@/server/api-routes";
 import { registerAuthRoutes } from "@/server/auth-routes";
+import { sendNotFound } from "@/server/errors";
 
 export function registerErrorHandler(app: Application) {
   app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
@@ -28,12 +29,24 @@ export function createApp(options?: { distDir?: string; setup?: (app: Applicatio
   if (process.env.NODE_ENV === "production") {
     const distDir = options?.distDir ?? path.join(process.cwd(), "dist");
     app.use(express.static(distDir));
-    app.get(/^(?!\/api|\/auth).*/, (_request, response) => {
+    // M2: Use exact prefix exclusion (/api/ or /api$, /auth/ or /auth$) so /apifoo or /authority
+    // still reach the SPA fallback.
+    app.get(/^(?!\/(api|auth)(\/|$))/, (_request, response) => {
       response.sendFile("index.html", { root: distDir });
     });
   }
 
+  // Custom test/integration setup routes are registered here so they take priority over the
+  // M1 catch-all below.
   options?.setup?.(app);
+
+  // M1: Catch-all for unknown /api/* paths → JSON 404 (applies in all environments).
+  // Must be last API handler so that all registered routes (including setup routes) have
+  // priority. Uses a string prefix for Express 5 compatibility.
+  app.use("/api", (_request, response) => {
+    sendNotFound(response, "API endpoint not found.");
+  });
+
   registerErrorHandler(app);
 
   return app;

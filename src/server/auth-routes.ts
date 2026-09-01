@@ -18,7 +18,16 @@ export function registerAuthRoutes(router: Router) {
 
     const result = await createMagicLink(email);
     if (!result) {
-      sendNotFound(response, "No account for that email.");
+      if (process.env.NODE_ENV !== "production") {
+        // Dev/test: return 404 so developers know the email isn't seeded.
+        sendNotFound(response, "No account for that email.");
+      } else {
+        // M4: Production — always 200 to avoid user enumeration.
+        // No rate limiting is applied here; see docs/superpowers/plans/ for the
+        // deferred implementation note. If needed, add a deterministic token-bucket
+        // implementation with unit tests before enabling it.
+        response.status(200).json({ ok: true, email });
+      }
       return;
     }
 

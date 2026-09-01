@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { apiGet, ApiError, type SessionResponse } from "@/client/api";
+import { apiAction, apiGet, ApiError, type SessionResponse } from "@/client/api";
 
 type RouteStateContextValue = {
   session: SessionResponse | null;
@@ -84,6 +84,37 @@ export function useRevalidate() {
   return useRouteState().revalidate;
 }
 
+/**
+ * I6 – Centralized mutation action runner.
+ *
+ * Wraps `apiAction` so that any 401 response automatically:
+ *   1. Refreshes the session (clears client-side user state)
+ *   2. Performs a full navigate to /login with the current path as ?redirect=
+ *
+ * Use this hook in all components instead of calling `apiAction` directly.
+ */
+export function useApiAction() {
+  const { refreshSession } = useRouteState();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  return useCallback(
+    async (
+      action: string,
+      body: Record<string, unknown> = {}
+    ): ReturnType<typeof apiAction> => {
+      const result = await apiAction(action, body);
+      if (!result.ok && result.status === 401) {
+        await refreshSession(); // clear client session state
+        const redirect = encodeURIComponent(location.pathname + location.search);
+        navigate(`/login?redirect=${redirect}`, { replace: true });
+      }
+      return result;
+    },
+    [refreshSession, navigate, location.pathname, location.search]
+  );
+}
+
 type RouteDataEntry<T> = {
   fetchKey: string;
   data: T | null;
@@ -131,11 +162,14 @@ export function useRouteData<T>(path: string) {
     };
   }, [fetchKey, path, refreshSession, navigate, location.pathname, location.search]);
 
+  // I1: distinguish a *path change* (different route, must not show old data) from a
+  // same-path revalidation (key bump, may show stale data while refreshing).
+  const isPathChange = !entry.fetchKey.startsWith(`${path}::`);
   const revalidating = entry.fetchKey !== fetchKey;
   return {
-    data: entry.data,
+    data: isPathChange ? null : entry.data,
     error: revalidating ? null : entry.error,
-    loading: !entry.done && entry.data === null,
+    loading: isPathChange || (!entry.done && entry.data === null),
   };
 }
 
