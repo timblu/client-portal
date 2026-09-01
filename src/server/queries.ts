@@ -11,7 +11,7 @@ import { attributedName } from "@/lib/format";
 import { toDirectoryMember, toDirectoryProjects } from "@/components/members/serialize";
 import { isLastCompanyAdmin } from "@/lib/members";
 import { listSwitchTargets } from "@/server/dev";
-import { serializeUser } from "@/server/test-helpers";
+import { serializeUser } from "@/server/serialize";
 
 function asAccessUser(user: User): AccessUser {
   return {
@@ -429,8 +429,8 @@ function serializeDeliverableView(
       decidedByName: attributedName(active.decidedBy),
       threads: active.threads.map((thread) => ({
         id: thread.id,
-        xPct: thread.xPct ?? 0,
-        yPct: thread.yPct ?? 0,
+        xPct: thread.xPct,
+        yPct: thread.yPct,
         resolved: thread.resolved,
         pinnedToTop: thread.pinnedToTop,
         comments: thread.comments.map((comment) => ({

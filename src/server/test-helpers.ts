@@ -1,19 +1,6 @@
-import type { User } from "@prisma/client";
 import type { Agent } from "supertest";
-import { db } from "@/lib/db";
 import { createMagicLink } from "@/lib/auth";
-
-export function serializeUser(user: User) {
-  return {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-    companyId: user.companyId,
-    companyRole: user.companyRole,
-    removedAt: user.removedAt?.toISOString() ?? null,
-  };
-}
+import { db } from "@/lib/db";
 
 export async function signInAs(agent: Agent, email: string) {
   const result = await createMagicLink(email);

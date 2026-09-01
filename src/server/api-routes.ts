@@ -1,6 +1,7 @@
-import type { Request, Response, Router } from "express";
+import type { NextFunction, Request, Response, Router } from "express";
 import { isCompanyAdmin } from "@/lib/access";
 import { sendForbidden, sendNotFound } from "@/server/errors";
+import { mutationErrorStatus } from "@/server/mutation-errors";
 import { requireUser } from "@/server/middleware";
 import { isMutationAction, runMutation } from "@/server/mutations";
 import {
@@ -181,30 +182,33 @@ export function registerApiRoutes(router: Router) {
     }
   );
 
-  router.post("/api/actions/:action", requireUser, async (request, response) => {
-    const action = routeParam(request.params.action);
-    if (!isMutationAction(action)) {
-      sendNotFound(response, "Unknown action.");
-      return;
-    }
+  router.post("/api/actions/:action", requireUser, async (request, response, next) => {
+    try {
+      const action = routeParam(request.params.action);
+      if (!isMutationAction(action)) {
+        sendNotFound(response, "Unknown action.");
+        return;
+      }
 
-    const currentToken = getSessionToken(request);
-    const result = await runMutation(action, request.user!, request.body ?? {}, currentToken);
-    if (!result.ok) {
-      const status = result.error.toLowerCase().includes("only an approver") ? 403 : 400;
-      response.status(status).json({ error: result.error });
-      return;
-    }
+      const currentToken = getSessionToken(request);
+      const result = await runMutation(action, request.user!, request.body ?? {}, currentToken);
+      if (!result.ok) {
+        const status = mutationErrorStatus(result.error);
+        response.status(status).json({ error: result.error });
+        return;
+      }
 
-    if (action === "switch-user" && result.data && typeof result.data === "object" && "session" in result.data) {
-      const session = (result.data as { session: { token: string; expiresAt: string | Date } }).session;
-      setSessionCookie(response, session.token, new Date(session.expiresAt));
-    }
+      if (result.session) {
+        setSessionCookie(response, result.session.token, result.session.expiresAt);
+      }
 
-    response.status(200).json({
-      ok: true,
-      ...(result.redirectTo ? { redirectTo: result.redirectTo } : {}),
-      ...(result.data ? { data: result.data } : {}),
-    });
+      response.status(200).json({
+        ok: true,
+        ...(result.redirectTo ? { redirectTo: result.redirectTo } : {}),
+        ...(result.data ? { data: result.data } : {}),
+      });
+    } catch (error) {
+      next(error);
+    }
   });
 }

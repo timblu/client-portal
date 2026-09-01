@@ -137,8 +137,104 @@ describe("api routes", () => {
 
     const response = await agent.post("/api/actions/switch-user").send({ userId: devon.id });
     expect(response.status).toBe(200);
+    expect(response.body.data).toBeUndefined();
+    expect(JSON.stringify(response.body)).not.toMatch(/"token"/);
 
     const session = await agent.get("/api/session");
     expect(session.body.user.email).toBe("devon@alpine.test");
+  });
+
+  it("returns 403 when a client tries to invite a member", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "casey@northwind.test");
+    const company = await db.company.findFirst({ where: { name: "Northwind Retail" } });
+    const project = await db.project.findFirst({ where: { companyId: company!.id } });
+
+    const response = await agent.post("/api/actions/invite-member").send({
+      companyId: company!.id,
+      email: "blocked@northwind.test",
+      name: "Blocked Member",
+      companyRole: "MEMBER",
+      memberships: [{ projectId: project!.id, role: "REVIEWER" }],
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toMatch(/cannot manage members/i);
+  });
+
+  it("returns 404 for deliverables outside a reviewer's assigned projects", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "priya@northwind.test");
+
+    const loyaltyProject = await db.project.findFirst({ where: { name: "Loyalty Program" } });
+    expect(loyaltyProject).toBeTruthy();
+
+    const deliverable = await db.deliverable.create({
+      data: {
+        projectId: loyaltyProject!.id,
+        type: "DESIGN",
+        title: "Loyalty landing page",
+      },
+    });
+    await db.version.create({
+      data: {
+        deliverableId: deliverable.id,
+        versionNumber: 1,
+        kind: "STATIC_IMAGE",
+        fileUrl: "/seed/homepage-v1.svg",
+      },
+    });
+
+    const response = await agent.get(`/api/client/deliverables/${deliverable.id}`);
+    expect(response.status).toBe(404);
+  });
+
+  it("returns JSON 500 for unexpected mutation failures", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "sam@agency.test");
+    const company = await db.company.findFirst({ where: { name: "Northwind Retail" } });
+    const member = await findUserByEmail("priya@northwind.test");
+    const project = await db.project.findFirst({
+      where: { companyId: company!.id, name: "Loyalty Program" },
+    });
+
+    const response = await agent.post("/api/actions/change-project-role").send({
+      companyId: company!.id,
+      memberId: member.id,
+      projectId: project!.id,
+      role: "APPROVER",
+    });
+
+    expect(response.status).toBe(500);
+    expect(response.body.error).toBeTruthy();
+  });
+
+  it("preserves nullable thread coordinates in deliverable responses", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "sam@agency.test");
+
+    const version = await db.version.findFirst({
+      where: { deliverable: { title: "Homepage concept" } },
+      orderBy: { versionNumber: "asc" },
+    });
+    expect(version).toBeTruthy();
+
+    const thread = await db.commentThread.create({
+      data: { versionId: version!.id, xPct: null, yPct: null },
+    });
+    await db.comment.create({
+      data: { threadId: thread.id, authorId: (await findUserByEmail("sam@agency.test")).id, body: "General note" },
+    });
+
+    const response = await agent.get(
+      `/api/staff/deliverables/${version!.deliverableId}?version=${version!.id}`
+    );
+    expect(response.status).toBe(200);
+
+    const generalThread = response.body.activeVersion.threads.find(
+      (item: { id: string }) => item.id === thread.id
+    );
+    expect(generalThread.xPct).toBeNull();
+    expect(generalThread.yPct).toBeNull();
   });
 });

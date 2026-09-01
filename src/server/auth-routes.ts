@@ -2,7 +2,7 @@ import type { Request, Response, Router } from "express";
 import { clearSession, consumeMagicLink, createMagicLink, createSession, getCurrentUser } from "@/lib/auth";
 import { devSwitchingEnabled, listSwitchTargets, resolveSwitchTarget } from "@/server/dev";
 import { sendBadRequest, sendForbidden, sendNotFound } from "@/server/errors";
-import { serializeUser } from "@/server/test-helpers";
+import { serializeUser } from "@/server/serialize";
 import { clearSessionCookie, getSessionToken, setSessionCookie } from "@/server/session";
 
 export function registerAuthRoutes(router: Router) {

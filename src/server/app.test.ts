@@ -9,4 +9,18 @@ describe("server application", () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ ok: true });
   });
+
+  it("returns JSON for unhandled route errors", async () => {
+    const app = createApp({
+      setup: (application) => {
+        application.get("/api/test-error", () => {
+          throw new Error("boom");
+        });
+      },
+    });
+
+    const response = await request(app).get("/api/test-error");
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ error: "Internal server error." });
+  });
 });

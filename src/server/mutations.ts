@@ -12,7 +12,7 @@ import { clearSession, createSession } from "@/lib/auth";
 import { resolveSwitchTarget } from "@/server/dev";
 
 export type MutationResult =
-  | { ok: true; redirectTo?: string; data?: unknown }
+  | { ok: true; redirectTo?: string; data?: unknown; session?: { token: string; expiresAt: Date } }
   | { ok: false; error: string };
 
 function asAccessUser(user: User): AccessUser {
@@ -569,7 +569,7 @@ export async function switchUser(
     const target = await resolveSwitchTarget(userId);
     await clearSession(currentSessionToken);
     const session = await createSession(target.id);
-    return success("/", { session });
+    return { ok: true, redirectTo: "/", session };
   } catch (error) {
     return failure(error instanceof Error ? error.message : "Unable to switch user.");
   }

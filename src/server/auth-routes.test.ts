@@ -1,6 +1,7 @@
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SESSION_COOKIE } from "@/lib/auth";
+import { db } from "@/lib/db";
 import { createApp } from "./app";
 import { findUserByEmail, signInAs } from "./test-helpers";
 
@@ -82,5 +83,71 @@ describe("auth routes", () => {
 
     const session = await agent.get("/api/session");
     expect(session.body.user.email).toBe("devon@alpine.test");
+  });
+
+  it("rejects expired magic links", async () => {
+    const user = await findUserByEmail("sam@agency.test");
+    const link = await db.magicLink.create({
+      data: {
+        token: "expired-token",
+        userId: user.id,
+        expiresAt: new Date(Date.now() - 1000),
+      },
+    });
+
+    const response = await request(createApp()).get(`/auth/verify?token=${link.token}`);
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBe("/login?error=notfound");
+  });
+
+  it("rejects already-used magic links", async () => {
+    const user = await findUserByEmail("sam@agency.test");
+    const link = await db.magicLink.create({
+      data: {
+        token: "used-token",
+        userId: user.id,
+        expiresAt: new Date(Date.now() + 1000 * 60 * 15),
+        usedAt: new Date(),
+      },
+    });
+
+    const response = await request(createApp()).get(`/auth/verify?token=${link.token}`);
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toBe("/login?error=notfound");
+  });
+
+  it("omits devLink in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      const response = await request(createApp())
+        .post("/api/auth/magic-link")
+        .send({ email: "sam@agency.test" });
+
+      expect(response.status).toBe(200);
+      expect(response.body.ok).toBe(true);
+      expect(response.body.devLink).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("sets secure session cookies in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      const user = await findUserByEmail("sam@agency.test");
+      const link = await db.magicLink.create({
+        data: {
+          token: "production-session-token",
+          userId: user.id,
+          expiresAt: new Date(Date.now() + 1000 * 60 * 15),
+        },
+      });
+
+      const response = await request(createApp()).get(`/auth/verify?token=${link.token}`);
+      expect(response.status).toBe(302);
+      expect(response.headers["set-cookie"]?.[0]).toMatch(/Secure/i);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

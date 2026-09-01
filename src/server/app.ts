@@ -1,9 +1,16 @@
 import path from "node:path";
-import express from "express";
+import express, { type Application, type NextFunction, type Request, type Response } from "express";
 import { registerApiRoutes } from "@/server/api-routes";
 import { registerAuthRoutes } from "@/server/auth-routes";
 
-export function createApp(options?: { distDir?: string }) {
+export function registerErrorHandler(app: Application) {
+  app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
+    console.error(error);
+    response.status(500).json({ error: "Internal server error." });
+  });
+}
+
+export function createApp(options?: { distDir?: string; setup?: (app: Application) => void }) {
   const app = express();
 
   app.use(express.json());
@@ -25,6 +32,9 @@ export function createApp(options?: { distDir?: string }) {
       response.sendFile(path.join(distDir, "index.html"));
     });
   }
+
+  options?.setup?.(app);
+  registerErrorHandler(app);
 
   return app;
 }
