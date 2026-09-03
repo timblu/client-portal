@@ -4,6 +4,8 @@ import { registerApiRoutes } from "@/server/api-routes";
 import { registerAuthRoutes } from "@/server/auth-routes";
 import { sendNotFound } from "@/server/errors";
 
+const SCREENSHOTS_DIR = path.join(process.cwd(), "data", "screenshots");
+
 export function registerErrorHandler(app: Application) {
   app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
     console.error(error);
@@ -16,6 +18,10 @@ export function createApp(options?: { distDir?: string; setup?: (app: Applicatio
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
+
+  // Captured prototype screenshots (see src/server/screenshot.ts). Served in every
+  // environment — Vite proxies /captures to this server in dev (vite.config.ts).
+  app.use("/captures", express.static(SCREENSHOTS_DIR));
 
   const router = express.Router();
   registerAuthRoutes(router);

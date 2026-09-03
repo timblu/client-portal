@@ -391,6 +391,7 @@ describe("deliverable viewer and members", () => {
               decidedAt: null,
               decidedByName: null,
               threads: [],
+              screenshots: [],
             },
             currentUser: {
               id: "reviewer-1",
@@ -640,6 +641,7 @@ describe("deliverable viewer and members", () => {
               decidedAt: null,
               decidedByName: null,
               threads: [],
+              screenshots: [],
             },
             currentUser: {
               id: "client-1",
@@ -674,6 +676,7 @@ describe("deliverable viewer and members", () => {
               decidedAt: null,
               decidedByName: null,
               threads: [],
+              screenshots: [],
             },
             currentUser: {
               id: "client-1",
@@ -729,6 +732,7 @@ describe("deliverable viewer and members", () => {
               decidedAt: null,
               decidedByName: null,
               threads: [],
+              screenshots: [],
             },
             currentUser: {
               id: "client-1",

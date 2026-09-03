@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useApiAction } from "@/client/RouteState";
+import { captureScreenshot, type CapturedScreenshot } from "@/client/api";
 import { DecisionBadge } from "@/components/DecisionBadge";
 import { AccountCluster } from "@/components/AccountCluster";
 import { formatDateTime, initials } from "@/lib/format";
@@ -27,9 +28,20 @@ type Thread = {
   xPct: number | null;
   yPct: number | null;
   screen: string | null;
+  screenshotId: string | null;
   resolved: boolean;
   pinnedToTop: boolean;
   comments: Comment[];
+};
+
+type Screenshot = {
+  id: string;
+  sourceUrl: string;
+  pageLabel: string | null;
+  imageUrl: string;
+  width: number;
+  height: number;
+  createdAt: string;
 };
 
 type VersionSummary = { id: string; versionNumber: number; decisionState: string };
@@ -46,6 +58,7 @@ type ActiveVersion = {
   decidedAt: string | null;
   decidedByName: string | null;
   threads: Thread[];
+  screenshots: Screenshot[];
 };
 
 type CurrentUser = { id: string; name: string; role: "STAFF" | "CLIENT"; canDecide: boolean };
@@ -127,12 +140,18 @@ export function DeliverableViewer({
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [prototypeScreen, setPrototypeScreen] = useState<string | null>(null);
-  const [externalPageUrl, setExternalPageUrl] = useState(activeVersion.prototypeUrl ?? "");
+  const [activeScreenshotId, setActiveScreenshotId] = useState<string | null>(null);
+  const [optimisticScreenshot, setOptimisticScreenshot] = useState<CapturedScreenshot | null>(null);
+  const [captureStatus, setCaptureStatus] = useState<"idle" | "capturing" | "error">("idle");
+  const [captureError, setCaptureError] = useState<string | null>(null);
   const [screenResetVersionId, setScreenResetVersionId] = useState(activeVersion.id);
   if (activeVersion.id !== screenResetVersionId) {
     setScreenResetVersionId(activeVersion.id);
     setPrototypeScreen(null);
-    setExternalPageUrl(activeVersion.prototypeUrl ?? "");
+    setActiveScreenshotId(null);
+    setOptimisticScreenshot(null);
+    setCaptureStatus("idle");
+    setCaptureError(null);
   }
 
   const apiBase = `/api${basePath}`;
@@ -150,17 +169,35 @@ export function DeliverableViewer({
   const canPin = !isPrototype || mode === "comment";
   const isExternalPrototype = isPrototype && isCrossOriginPrototypeUrl(activeVersion.prototypeUrl);
 
-  const knownExternalPages = useMemo(() => {
-    if (!isExternalPrototype) return [] as string[];
-    const pages = new Set<string>();
-    if (activeVersion.prototypeUrl) {
-      pages.add(locationKeyFromHref(activeVersion.prototypeUrl));
+  // Cross-origin prototypes (Figma Make, Framer, external staging links, etc.) can't share
+  // their live URL with us, so comments pin to a server-captured screenshot instead of the
+  // iframe. `optimisticScreenshot` shows a just-captured image immediately, before the
+  // parent's data refetch (onMutate) lands it in activeVersion.screenshots.
+  const screenshots = useMemo(() => {
+    const known = activeVersion.screenshots ?? [];
+    if (optimisticScreenshot && !known.some((s) => s.id === optimisticScreenshot.id)) {
+      return [optimisticScreenshot, ...known];
     }
-    for (const thread of activeVersion.threads) {
-      if (thread.screen) pages.add(thread.screen);
-    }
-    return [...pages];
-  }, [isExternalPrototype, activeVersion.prototypeUrl, activeVersion.threads]);
+    return known;
+  }, [activeVersion.screenshots, optimisticScreenshot]);
+
+  const activeScreenshot = useMemo(
+    () => screenshots.find((s) => s.id === activeScreenshotId) ?? screenshots[0] ?? null,
+    [screenshots, activeScreenshotId]
+  );
+
+  const screenshotById = useMemo(() => {
+    const map = new Map<string, Screenshot>();
+    for (const shot of screenshots) map.set(shot.id, shot);
+    return map;
+  }, [screenshots]);
+
+  function threadScreenshotTag(thread: Thread): string | null {
+    if (!thread.screenshotId) return null;
+    const shot = screenshotById.get(thread.screenshotId);
+    if (!shot) return "Preview";
+    return screenshots[0]?.id === shot.id ? "Current preview" : `Older preview · ${formatDateTime(shot.createdAt)}`;
+  }
 
   const sortedThreads = useMemo(
     () =>
@@ -219,32 +256,21 @@ export function DeliverableViewer({
     };
   }, [compareEnabled, compareVersionId, activeVersion.id, apiBase, deliverableId]);
 
+  // Same-origin prototypes only — their iframe URL is readable, so comments key off the
+  // actual page path/hash. Cross-origin prototypes use the screenshot capture flow below.
   useEffect(() => {
-    if (!isPrototype) return;
+    if (!isPrototype || isExternalPrototype) return;
 
     function syncFromIframe() {
       const iframe = iframeRef.current;
       if (!iframe) return;
       const key = readIframeLocationKey(iframe);
-      if (key) {
-        setPrototypeScreen(key);
-        return;
-      }
-      // Cross-origin: browser blocks reading the iframe URL. Keep comments scoped via the
-      // manual page URL field (seeded from the prototype entry URL).
-      if (isExternalPrototype && activeVersion.prototypeUrl) {
-        setPrototypeScreen((prev) => prev ?? locationKeyFromHref(activeVersion.prototypeUrl!));
-      }
+      if (key) setPrototypeScreen(key);
     }
 
     function onMessage(e: MessageEvent) {
-      // Cross-origin (or SPA) prototypes that emit page keys via postMessage.
       const screen = readScreenMessage(e.data);
-      if (screen) {
-        const key = locationKeyFromHref(screen);
-        setPrototypeScreen(key);
-        setExternalPageUrl(key);
-      }
+      if (screen) setPrototypeScreen(locationKeyFromHref(screen));
     }
 
     syncFromIframe();
@@ -257,32 +283,81 @@ export function DeliverableViewer({
       iframe?.removeEventListener("load", syncFromIframe);
       window.removeEventListener("message", onMessage);
     };
-  }, [isPrototype, isExternalPrototype, activeVersion.prototypeUrl, activeVersion.id]);
+  }, [isPrototype, isExternalPrototype, activeVersion.id]);
 
-  function applyExternalPageUrl(raw: string, { reloadIframe = true } = {}) {
-    const trimmed = raw.trim();
-    if (!trimmed) return;
-    const key = locationKeyFromHref(trimmed);
-    setExternalPageUrl(key);
-    setPrototypeScreen(key);
-    if (reloadIframe && iframeRef.current) {
-      navigateIframeToScreen(iframeRef.current, key, activeVersion.prototypeUrl);
+  // Cross-origin prototypes: auto-capture a screenshot the first time this version is
+  // opened with no captures yet. Refresh (below) re-runs this without overwriting old rows.
+  useEffect(() => {
+    if (!isExternalPrototype) return;
+    if (screenshots.length > 0) return;
+    if (!activeVersion.prototypeUrl) return;
+
+    let cancelled = false;
+    const versionId = activeVersion.id;
+    const url: string = activeVersion.prototypeUrl;
+
+    async function run() {
+      setCaptureStatus("capturing");
+      setCaptureError(null);
+      const result = await captureScreenshot(versionId, url).catch(
+        () => ({ ok: false as const, error: "Unable to capture that page.", status: 0 })
+      );
+      if (cancelled) return;
+      if (!result.ok) {
+        setCaptureStatus("error");
+        setCaptureError(result.error);
+        return;
+      }
+      setCaptureStatus("idle");
+      setOptimisticScreenshot(result.screenshot);
+      setActiveScreenshotId(result.screenshot.id);
+      onMutate?.();
     }
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [isExternalPrototype, screenshots.length, activeVersion.id, activeVersion.prototypeUrl, onMutate]);
+
+  function refreshPreview() {
+    if (!activeVersion.prototypeUrl) return;
+    setCaptureStatus("capturing");
+    setCaptureError(null);
+    captureScreenshot(activeVersion.id, activeVersion.prototypeUrl)
+      .then((result) => {
+        if (!result.ok) {
+          setCaptureStatus("error");
+          setCaptureError(result.error);
+          return;
+        }
+        setCaptureStatus("idle");
+        setOptimisticScreenshot(result.screenshot);
+        setActiveScreenshotId(result.screenshot.id);
+        onMutate?.();
+      })
+      .catch(() => {
+        setCaptureStatus("error");
+        setCaptureError("Unable to capture that page.");
+      });
   }
 
   function selectThread(threadId: string) {
     setActiveThreadId(threadId);
     const thread = activeVersion.threads.find((t) => t.id === threadId);
-    if (
-      isPrototype &&
-      thread?.screen &&
-      thread.screen !== prototypeScreen &&
-      iframeRef.current
-    ) {
-      if (isExternalPrototype) {
-        setExternalPageUrl(thread.screen);
-        setPrototypeScreen(thread.screen);
+    if (!thread) return;
+
+    if (isExternalPrototype && thread.screenshotId) {
+      // Switch the canvas to whichever screenshot this thread was pinned on, so the pin
+      // lines up (older threads may belong to a capture that's since been refreshed).
+      if (thread.screenshotId !== activeScreenshot?.id) {
+        setActiveScreenshotId(thread.screenshotId);
       }
+      setMode("comment");
+      return;
+    }
+
+    if (isPrototype && !isExternalPrototype && thread.screen && thread.screen !== prototypeScreen && iframeRef.current) {
       navigateIframeToScreen(iframeRef.current, thread.screen, activeVersion.prototypeUrl);
     }
   }
@@ -309,6 +384,9 @@ export function DeliverableViewer({
 
   function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!canPin) return;
+    // Cross-origin canvas is the captured image — no pinning while a capture is in
+    // flight, failed, or hasn't happened yet.
+    if (isExternalPrototype && (!activeScreenshot || captureStatus !== "idle")) return;
     if (!canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
@@ -328,11 +406,8 @@ export function DeliverableViewer({
         versionId: activeVersion.id,
         xPct: x,
         yPct: y,
-        screen: isPrototype
-          ? isExternalPrototype
-            ? locationKeyFromHref(externalPageUrl || activeVersion.prototypeUrl || "")
-            : prototypeScreen
-          : undefined,
+        screen: isPrototype && !isExternalPrototype ? prototypeScreen : undefined,
+        screenshotId: isExternalPrototype ? activeScreenshot?.id : undefined,
         body,
       });
       if (!result.ok) {
@@ -630,46 +705,41 @@ export function DeliverableViewer({
 
           <div className="min-h-0 flex-1 overflow-auto p-4">
             {isExternalPrototype ? (
-              <div className="mb-3 rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--surface-page)] px-3 py-2">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[0.6875rem] font-medium uppercase tracking-[0.04em] text-[var(--text-secondary)]">
-                    Commenting on page
-                  </span>
-                  <span className="text-xs text-[var(--text-secondary)]">
-                    External prototypes can&apos;t share their current URL with us. After you navigate
-                    inside the prototype, paste that page&apos;s URL here before leaving a comment —
-                    pins stay on that page only.
-                  </span>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      className="wf-input min-w-[16rem] flex-1 text-xs"
-                      value={externalPageUrl}
-                      onChange={(e) => setExternalPageUrl(e.target.value)}
-                      onBlur={() => applyExternalPageUrl(externalPageUrl, { reloadIframe: false })}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          applyExternalPageUrl(externalPageUrl, { reloadIframe: true });
-                        }
-                      }}
-                      placeholder="https://…/current-page"
-                      aria-label="Page URL for comments"
-                      list="prototype-known-pages"
-                    />
-                    <datalist id="prototype-known-pages">
-                      {knownExternalPages.map((page) => (
-                        <option key={page} value={page} />
-                      ))}
-                    </datalist>
-                    <button
-                      type="button"
-                      className="wf-btn text-xs"
-                      onClick={() => applyExternalPageUrl(externalPageUrl, { reloadIframe: true })}
-                    >
-                      Load page
-                    </button>
-                  </div>
-                </label>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--surface-page)] px-3 py-2 text-xs text-[var(--text-secondary)]">
+                <div>
+                  {captureStatus === "capturing" ? (
+                    "Capturing a preview of this page…"
+                  ) : captureStatus === "error" ? (
+                    captureError ?? "Unable to capture that page."
+                  ) : activeScreenshot ? (
+                    <>
+                      Preview captured {formatDateTime(activeScreenshot.createdAt)}
+                      {screenshots.length > 1 && activeScreenshot.id !== screenshots[0].id ? (
+                        <>
+                          {" "}
+                          ·{" "}
+                          <button
+                            type="button"
+                            className="wf-link-muted"
+                            onClick={() => setActiveScreenshotId(screenshots[0].id)}
+                          >
+                            View latest capture
+                          </button>
+                        </>
+                      ) : null}
+                    </>
+                  ) : (
+                    "This prototype can't share its live URL — comments pin to a captured screenshot instead."
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="wf-btn text-xs"
+                  onClick={refreshPreview}
+                  disabled={captureStatus === "capturing"}
+                >
+                  Refresh preview
+                </button>
               </div>
             ) : null}
             {compareEnabled ? (
@@ -698,6 +768,11 @@ export function DeliverableViewer({
                     onSubmitDraft={submitDraftPin}
                     prototypeScreen={prototypeScreen}
                     iframeRef={iframeRef}
+                    isExternalPrototype={isExternalPrototype}
+                    activeScreenshot={activeScreenshot}
+                    captureStatus={captureStatus}
+                    captureError={captureError}
+                    onRefreshPreview={refreshPreview}
                   />
                 </div>
                 <div className="min-w-0 flex-1 border-l border-[var(--border-subtle)] pl-3">
@@ -752,6 +827,11 @@ export function DeliverableViewer({
                 onSubmitDraft={submitDraftPin}
                 prototypeScreen={prototypeScreen}
                 iframeRef={iframeRef}
+                isExternalPrototype={isExternalPrototype}
+                activeScreenshot={activeScreenshot}
+                captureStatus={captureStatus}
+                captureError={captureError}
+                onRefreshPreview={refreshPreview}
               />
             )}
           </div>
@@ -783,6 +863,9 @@ export function DeliverableViewer({
                         {idx + 1}
                       </span>
                       {thread.screen ? <span className="wf-tag">{screenLabel(thread.screen)}</span> : null}
+                      {threadScreenshotTag(thread) ? (
+                        <span className="wf-tag">{threadScreenshotTag(thread)}</span>
+                      ) : null}
                       {thread.pinnedToTop ? <span className="wf-tag">Pinned</span> : null}
                       {thread.resolved ? <span className="wf-tag">Resolved</span> : null}
                     </span>
@@ -985,6 +1068,11 @@ function ReviewCanvas({
   onSubmitDraft,
   prototypeScreen,
   iframeRef,
+  isExternalPrototype,
+  activeScreenshot,
+  captureStatus,
+  captureError,
+  onRefreshPreview,
 }: {
   version: ActiveVersion;
   mode: "interact" | "comment";
@@ -1002,11 +1090,21 @@ function ReviewCanvas({
   onSubmitDraft: () => void;
   prototypeScreen: string | null;
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
+  isExternalPrototype: boolean;
+  activeScreenshot: Screenshot | null;
+  captureStatus: "idle" | "capturing" | "error";
+  captureError: string | null;
+  onRefreshPreview: () => void;
 }) {
   const isPrototype = version.kind === "PROTOTYPE_URL";
-  const canvasThreads = isPrototype
-    ? sortedThreads.filter((t) => t.screen == null || t.screen === prototypeScreen)
-    : sortedThreads;
+  const showingScreenshotSurface = isExternalPrototype && mode === "comment";
+  const canvasThreads = !isPrototype
+    ? sortedThreads
+    : isExternalPrototype
+    ? showingScreenshotSurface && activeScreenshot
+      ? sortedThreads.filter((t) => t.screenshotId === activeScreenshot.id)
+      : []
+    : sortedThreads.filter((t) => t.screen == null || t.screen === prototypeScreen);
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -1017,7 +1115,16 @@ function ReviewCanvas({
           canPin ? "cursor-crosshair" : ""
         }`}
       >
-        <ArtifactSurface version={version} interactMode={mode === "interact"} iframeRef={iframeRef} />
+        {showingScreenshotSurface ? (
+          <ScreenshotSurface
+            screenshot={activeScreenshot}
+            captureStatus={captureStatus}
+            captureError={captureError}
+            onRefreshPreview={onRefreshPreview}
+          />
+        ) : (
+          <ArtifactSurface version={version} interactMode={mode === "interact"} iframeRef={iframeRef} />
+        )}
 
         {isPrototype ? (
           <PrototypeModeControl mode={mode} onModeChange={onModeChange} />
@@ -1083,12 +1190,61 @@ function ReviewCanvas({
       </div>
       {canPin ? (
         <p className="mt-3 text-center text-xs text-[var(--text-secondary)]">
-          {isPrototype && prototypeScreen
+          {isExternalPrototype
+            ? "Click anywhere on the captured preview to leave a comment."
+            : isPrototype && prototypeScreen
             ? `Click to leave a comment on the ${screenLabel(prototypeScreen)} page.`
             : "Click anywhere on the file to leave a comment."}
         </p>
       ) : null}
     </div>
+  );
+}
+
+function ScreenshotSurface({
+  screenshot,
+  captureStatus,
+  captureError,
+  onRefreshPreview,
+}: {
+  screenshot: Screenshot | null;
+  captureStatus: "idle" | "capturing" | "error";
+  captureError: string | null;
+  onRefreshPreview: () => void;
+}) {
+  if (captureStatus === "capturing" || (!screenshot && captureStatus !== "error")) {
+    return (
+      <div className="flex h-[600px] w-full items-center justify-center text-sm text-[var(--text-secondary)]">
+        Capturing a preview of this page…
+      </div>
+    );
+  }
+
+  if (captureStatus === "error" || !screenshot) {
+    return (
+      <div className="flex h-[600px] w-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-[var(--text-secondary)]">
+        <p>{captureError ?? "Unable to capture that page."}</p>
+        <button
+          type="button"
+          className="wf-btn text-xs"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRefreshPreview();
+          }}
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={screenshot.imageUrl}
+      alt="Captured prototype preview"
+      className="block w-full select-none"
+      draggable={false}
+    />
   );
 }
 

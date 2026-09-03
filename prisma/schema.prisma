@@ -161,19 +161,40 @@ model Version {
   decidedBy       User?         @relation("VersionDecidedBy", fields: [decidedById], references: [id])
   decidedAt       DateTime?
 
+  threads     CommentThread[]
+  screenshots PrototypeScreenshot[]
+}
+
+// A full-page capture of a cross-origin prototype URL we don't control, so reviewers can
+// pin comments to x/y coordinates on the image instead of a live (unreadable) iframe.
+// Never overwritten — "refresh preview" creates a new row so existing pins stay attached
+// to the capture they were made on.
+model PrototypeScreenshot {
+  id        String   @id @default(cuid())
+  versionId String
+  version   Version  @relation(fields: [versionId], references: [id])
+  sourceUrl String
+  pageLabel String?
+  imageUrl  String
+  width     Int
+  height    Int
+  createdAt DateTime @default(now())
+
   threads CommentThread[]
 }
 
 model CommentThread {
-  id          String   @id @default(cuid())
-  versionId   String
-  version     Version  @relation(fields: [versionId], references: [id])
-  xPct        Float?
-  yPct        Float?
-  screen      String?
-  resolved    Boolean  @default(false)
-  pinnedToTop Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  id           String                @id @default(cuid())
+  versionId    String
+  version      Version               @relation(fields: [versionId], references: [id])
+  xPct         Float?
+  yPct         Float?
+  screen       String?
+  screenshotId String?
+  screenshot   PrototypeScreenshot?  @relation(fields: [screenshotId], references: [id])
+  resolved     Boolean               @default(false)
+  pinnedToTop  Boolean               @default(false)
+  createdAt    DateTime              @default(now())
 
   comments Comment[]
 }

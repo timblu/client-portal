@@ -185,6 +185,7 @@ export async function getStaffDeliverable(_user: User, deliverableId: string, ve
               comments: { include: { author: true }, orderBy: { createdAt: "asc" } },
             },
           },
+          screenshots: { orderBy: { createdAt: "desc" } },
         },
       },
     },
@@ -286,6 +287,7 @@ export async function getClientDeliverable(user: User, deliverableId: string, ve
               comments: { include: { author: true }, orderBy: { createdAt: "asc" } },
             },
           },
+          screenshots: { orderBy: { createdAt: "desc" } },
         },
       },
     },
@@ -388,6 +390,7 @@ function serializeDeliverableView(
         xPct: number | null;
         yPct: number | null;
         screen: string | null;
+        screenshotId: string | null;
         resolved: boolean;
         pinnedToTop: boolean;
         comments: {
@@ -396,6 +399,15 @@ function serializeDeliverableView(
           createdAt: Date;
           author: { name: string; role: string; removedAt: Date | null };
         }[];
+      }[];
+      screenshots: {
+        id: string;
+        sourceUrl: string;
+        pageLabel: string | null;
+        imageUrl: string;
+        width: number;
+        height: number;
+        createdAt: Date;
       }[];
     }[];
   },
@@ -433,6 +445,7 @@ function serializeDeliverableView(
         xPct: thread.xPct,
         yPct: thread.yPct,
         screen: thread.screen,
+        screenshotId: thread.screenshotId,
         resolved: thread.resolved,
         pinnedToTop: thread.pinnedToTop,
         comments: thread.comments.map((comment) => ({
@@ -444,6 +457,15 @@ function serializeDeliverableView(
             role: comment.author.role,
           },
         })),
+      })),
+      screenshots: active.screenshots.map((shot) => ({
+        id: shot.id,
+        sourceUrl: shot.sourceUrl,
+        pageLabel: shot.pageLabel,
+        imageUrl: shot.imageUrl,
+        width: shot.width,
+        height: shot.height,
+        createdAt: shot.createdAt.toISOString(),
       })),
     },
     currentUser,

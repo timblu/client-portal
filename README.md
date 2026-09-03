@@ -14,6 +14,7 @@ deliverable. The UI is a monochrome product surface (not a wireframe). See
 | Data | Prisma 6 + SQLite (`prisma/dev.db`) |
 | Styling | Tailwind CSS 4 + hand-rolled monochrome primitives (`src/client/globals.css`) |
 | Auth | Email magic-link, invite-only, no passwords |
+| Screenshot capture | Playwright (Chromium), full-page PNGs on local disk (`src/server/screenshot.ts`) |
 
 The schema is Salesforce-shaped (`Company` ≈ Account, client `User` ≈ Contact) so a future move
 to a live Salesforce org does not require an object-model rewrite. Live Salesforce is explicitly
@@ -26,13 +27,20 @@ under **Dev inbox** (development only).
 
 ```bash
 npm install
+npx playwright install chromium   # headless browser for prototype screenshot capture
 npx prisma migrate dev   # creates prisma/dev.db
 npm run db:seed          # two companies, sample deliverables, comments
 npm run dev              # Vite :5173 + Express :3001
 ```
 
-Open http://localhost:5173/login. Vite proxies `/api` and `/auth` to the Express server on port
-3001.
+Open http://localhost:5173/login. Vite proxies `/api`, `/auth`, and `/captures` to the Express
+server on port 3001.
+
+`npx playwright install chromium` downloads a headless Chromium build the first time (and again
+whenever Playwright is upgraded). CI/hosting environments (e.g. Heroku) need the same step plus
+Chromium's OS-level dependencies — see
+[Playwright's CI guide](https://playwright.dev/docs/ci) for the buildpack/apt packages your
+platform requires.
 
 ### Demo accounts
 
@@ -118,7 +126,8 @@ src/
 │   ├── auth-routes.ts
 │   ├── api-routes.ts
 │   ├── queries.ts
-│   └── mutations.ts
+│   ├── mutations.ts
+│   └── screenshot.ts # Playwright capture + SSRF URL guard
 ├── components/       # Shared UI (DeliverableViewer, members, nav)
 └── lib/              # Framework-neutral helpers (auth, access, db, format)
 prisma/
@@ -149,13 +158,39 @@ prisma/
 - `/api/actions/:action` — company, member, project, deliverable, version, comment, thread,
   decision, and account-switch actions. Body is JSON; success returns
   `{ ok: true, redirectTo?: string, data?: unknown }`.
+- `POST /api/screenshots` — captures a full-page screenshot of a prototype URL (Playwright,
+  `src/server/screenshot.ts`) and stores it under `data/screenshots/`, served at
+  `GET /captures/:id.png`. Not under `/api/actions/:action` because capture is slow (real
+  browser navigation, ~seconds not milliseconds). Body: `{ versionId, url, pageLabel? }` →
+  `{ ok: true, screenshot: { id, imageUrl, width, height, sourceUrl, pageLabel, createdAt } }`.
+  Used by the viewer to pin comments on cross-origin prototypes it can't read the URL of (see
+  "Prototype comment pinning" below).
+
+## Prototype comment pinning
+
+Comments on a `PROTOTYPE_URL` version anchor differently depending on whether the prototype is
+same-origin or not, since a cross-origin iframe's URL can't be read from the parent page:
+
+- **Same-origin / relative URLs** (e.g. the `/proto/checkout/:screen` demo): the viewer polls the
+  live iframe's URL and stores it on `CommentThread.screen`. Pins only show while that exact
+  page/route is open.
+- **Cross-origin `http(s)` URLs** (Figma Make, Framer, external staging links, etc.): the viewer
+  calls `POST /api/screenshots` to capture a full-page PNG, then pins land on that image via
+  `CommentThread.screenshotId` + `xPct`/`yPct` (percent of image size, not raw pixels). "Refresh
+  preview" captures a new `PrototypeScreenshot` row without deleting old ones, so existing pins
+  stay attached to the capture they were made on even after the page changes. This pass captures
+  one screenshot per `Version.prototypeUrl` — it does not crawl multi-page/SPA routes.
 
 ## Known deferred items
 
 - Live Salesforce read/write — data model mirrors Salesforce but persists to SQLite.
 - Production email delivery for magic links.
-- Version compare (side-by-side / overlay).
-- File uploads are pasted URLs/paths (`/seed/*.svg`) rather than real object storage.
+- Version compare (side-by-side / overlay) does not yet capture a screenshot for cross-origin
+  prototypes on the compare-to side.
+- File uploads are pasted URLs/paths (`/seed/*.svg`) rather than real object storage; captured
+  screenshots follow the same local-disk convention (`data/screenshots/`, gitignored).
+- Screenshot capture is single-page only — no multi-page/SPA route crawling for cross-origin
+  prototypes.
 - Blockers, phases, and notification inbox UI were removed in the V1 cut; underlying Prisma
   models remain but are unused.
 

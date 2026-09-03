@@ -76,6 +76,44 @@ export async function apiAction(
   return { ok: true, redirectTo: result.redirectTo, data: result.data };
 }
 
+export type CapturedScreenshot = {
+  id: string;
+  sourceUrl: string;
+  pageLabel: string | null;
+  imageUrl: string;
+  width: number;
+  height: number;
+  createdAt: string;
+};
+
+type ScreenshotResponse = {
+  ok?: boolean;
+  screenshot?: CapturedScreenshot;
+  error?: string;
+};
+
+// Not a POST /api/actions/:action mutation — capture is slow (headless browser
+// navigation), so it has its own endpoint and response shape (src/server/screenshot.ts).
+export async function captureScreenshot(
+  versionId: string,
+  url: string,
+  pageLabel?: string
+): Promise<
+  { ok: true; screenshot: CapturedScreenshot } | { ok: false; error: string; status: number }
+> {
+  const response = await fetch("/api/screenshots", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ versionId, url, pageLabel }),
+  });
+  const result = await readJson<ScreenshotResponse>(response);
+  if (!response.ok || !result.ok || !result.screenshot) {
+    return { ok: false, error: result.error ?? "Request failed.", status: response.status };
+  }
+  return { ok: true, screenshot: result.screenshot };
+}
+
 export async function requestMagicLink(email: string): Promise<{
   ok: boolean;
   email?: string;

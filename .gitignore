@@ -48,3 +48,6 @@ yarn-error.log*
 /prisma/dev.db-journal
 /prisma/test.db
 /prisma/test.db-journal
+
+# captured prototype screenshots (reproducible via POST /api/screenshots)
+/data/screenshots

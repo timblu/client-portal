@@ -13,6 +13,7 @@ export default defineConfig({
     proxy: {
       "/api": "http://localhost:3001",
       "/auth": "http://localhost:3001",
+      "/captures": "http://localhost:3001",
     },
   },
   build: {

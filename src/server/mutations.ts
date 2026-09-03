@@ -10,6 +10,7 @@ import { notifyAllStaff, notifyCompany } from "@/lib/notifications";
 import { clearSession, createSession } from "@/lib/auth";
 import { resolveSwitchTarget } from "@/server/dev";
 import type { MutationErrorCode } from "@/server/mutation-errors";
+import { capturePrototypeScreenshot, ScreenshotCaptureError } from "@/server/screenshot";
 
 export type MutationResult =
   | { ok: true; redirectTo?: string; data?: unknown; session?: { token: string; expiresAt: Date } }
@@ -453,10 +454,24 @@ export async function addThread(actor: User, body: Record<string, unknown>): Pro
 
   try {
     const version = await requireProjectAccessForVersion(actor, versionId);
+
+    const rawScreenshotId = String(body.screenshotId ?? "").trim();
+    let screenshotId: string | null = null;
+    if (rawScreenshotId) {
+      const screenshot = await db.prototypeScreenshot.findUnique({ where: { id: rawScreenshotId } });
+      if (!screenshot || screenshot.versionId !== versionId) {
+        return failure("That screenshot no longer belongs to this version.", "BAD_REQUEST");
+      }
+      screenshotId = screenshot.id;
+    }
+
+    // A thread pinned to a screenshot is anchored to that captured image, not to a
+    // same-origin iframe's current URL — the two anchoring modes are mutually exclusive.
     const rawScreen = String(body.screen ?? "").trim().slice(0, 500);
-    const screen = version.kind === "PROTOTYPE_URL" && rawScreen ? rawScreen : null;
+    const screen = version.kind === "PROTOTYPE_URL" && rawScreen && !screenshotId ? rawScreen : null;
+
     const thread = await db.commentThread.create({
-      data: { versionId, xPct, yPct, screen },
+      data: { versionId, xPct, yPct, screen, screenshotId },
     });
     await db.comment.create({
       data: { threadId: thread.id, authorId: actor.id, body: commentBody },
@@ -471,6 +486,51 @@ export async function addThread(actor: User, body: Record<string, unknown>): Pro
     return success();
   } catch (error) {
     return failure(error instanceof Error ? error.message : "Unable to add thread.");
+  }
+}
+
+export async function createPrototypeScreenshot(
+  actor: User,
+  body: Record<string, unknown>
+): Promise<MutationResult> {
+  const versionId = String(body.versionId ?? "");
+  const rawUrl = String(body.url ?? "").trim();
+  const pageLabel = String(body.pageLabel ?? "").trim().slice(0, 200) || null;
+  if (!versionId) return failure("A version is required.", "BAD_REQUEST");
+  if (!rawUrl) return failure("A URL is required.", "BAD_REQUEST");
+
+  try {
+    const version = await requireProjectAccessForVersion(actor, versionId);
+    if (version.kind !== "PROTOTYPE_URL") {
+      return failure("Screenshots can only be captured for hosted prototype versions.", "BAD_REQUEST");
+    }
+
+    const captured = await capturePrototypeScreenshot(rawUrl);
+    const screenshot = await db.prototypeScreenshot.create({
+      data: {
+        versionId,
+        sourceUrl: rawUrl,
+        pageLabel,
+        imageUrl: captured.imageUrl,
+        width: captured.width,
+        height: captured.height,
+      },
+    });
+
+    return success(undefined, {
+      id: screenshot.id,
+      sourceUrl: screenshot.sourceUrl,
+      pageLabel: screenshot.pageLabel,
+      imageUrl: screenshot.imageUrl,
+      width: screenshot.width,
+      height: screenshot.height,
+      createdAt: screenshot.createdAt.toISOString(),
+    });
+  } catch (error) {
+    if (error instanceof ScreenshotCaptureError) {
+      return failure(error.message, "BAD_REQUEST");
+    }
+    return failure(error instanceof Error ? error.message : "Unable to capture that page.");
   }
 }
 

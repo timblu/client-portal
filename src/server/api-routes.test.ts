@@ -1,8 +1,28 @@
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
 import { createApp } from "./app";
 import { findUserByEmail, signInAs } from "./test-helpers";
+import { ScreenshotCaptureError } from "./screenshot";
+
+// Capture is a real headless-browser call (src/server/screenshot.ts) — mock it here so
+// API tests exercise the DB/access-check plumbing without launching Chromium.
+let captureCallCount = 0;
+vi.mock("./screenshot", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./screenshot")>();
+  return {
+    ...actual,
+    capturePrototypeScreenshot: vi.fn(async (_url: string) => {
+      captureCallCount += 1;
+      return {
+        id: `mock-shot-${captureCallCount}`,
+        imageUrl: `/captures/mock-shot-${captureCallCount}.png`,
+        width: 1280,
+        height: 2400,
+      };
+    }),
+  };
+});
 
 describe("api routes", () => {
   it("returns 401 for unauthenticated staff queries", async () => {
@@ -314,5 +334,212 @@ describe("api routes", () => {
         item.comments.some((c) => c.body === "This should stay unscoped.")
     );
     expect(newThread.screen).toBeNull();
+  });
+
+  describe("screenshot-based comment pinning", () => {
+    it("captures a screenshot for a prototype version and returns image metadata", async () => {
+      const agent = request.agent(createApp());
+      await signInAs(agent, "priya@northwind.test");
+
+      const version = await db.version.findFirst({
+        where: { deliverable: { title: "Checkout flow prototype" } },
+      });
+      expect(version).toBeTruthy();
+
+      const response = await agent.post("/api/screenshots").send({
+        versionId: version!.id,
+        url: "https://ui-ux-wireframes-690056f8c48f.herokuapp.com/",
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.body.ok).toBe(true);
+      expect(response.body.screenshot.imageUrl).toMatch(/^\/captures\//);
+      expect(response.body.screenshot.width).toBe(1280);
+      expect(response.body.screenshot.height).toBe(2400);
+
+      const stored = await db.prototypeScreenshot.findUnique({
+        where: { id: response.body.screenshot.id },
+      });
+      expect(stored).toBeTruthy();
+      expect(stored!.versionId).toBe(version!.id);
+      expect(stored!.sourceUrl).toBe("https://ui-ux-wireframes-690056f8c48f.herokuapp.com/");
+    });
+
+    it("includes captured screenshots on the deliverable payload", async () => {
+      const agent = request.agent(createApp());
+      await signInAs(agent, "priya@northwind.test");
+
+      const version = await db.version.findFirst({
+        where: { deliverable: { title: "Checkout flow prototype" } },
+      });
+      expect(version).toBeTruthy();
+
+      const capture = await agent.post("/api/screenshots").send({
+        versionId: version!.id,
+        url: "https://example-prototype.test/",
+      });
+      expect(capture.status).toBe(200);
+
+      const deliverableResponse = await agent.get(
+        `/api/client/deliverables/${version!.deliverableId}?version=${version!.id}`
+      );
+      expect(deliverableResponse.status).toBe(200);
+      const shot = deliverableResponse.body.activeVersion.screenshots.find(
+        (item: { id: string }) => item.id === capture.body.screenshot.id
+      );
+      expect(shot).toBeTruthy();
+      expect(shot.sourceUrl).toBe("https://example-prototype.test/");
+    });
+
+    it("rejects screenshot capture for non-prototype versions", async () => {
+      const agent = request.agent(createApp());
+      await signInAs(agent, "sam@agency.test");
+
+      const version = await db.version.findFirst({
+        where: { deliverable: { title: "Homepage concept" } },
+        orderBy: { versionNumber: "asc" },
+      });
+      expect(version).toBeTruthy();
+
+      const response = await agent.post("/api/screenshots").send({
+        versionId: version!.id,
+        url: "https://example.test/",
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toMatch(/hosted prototype/i);
+    });
+
+    it("returns a clear error when capture fails, instead of a silent blank image", async () => {
+      const agent = request.agent(createApp());
+      await signInAs(agent, "priya@northwind.test");
+
+      const version = await db.version.findFirst({
+        where: { deliverable: { title: "Checkout flow prototype" } },
+      });
+      expect(version).toBeTruthy();
+
+      const { capturePrototypeScreenshot } = await import("./screenshot");
+      vi.mocked(capturePrototypeScreenshot).mockRejectedValueOnce(
+        new ScreenshotCaptureError("Timed out loading that page. It may be slow, or require sign-in.")
+      );
+
+      const response = await agent.post("/api/screenshots").send({
+        versionId: version!.id,
+        url: "https://slow-prototype.test/",
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toMatch(/timed out/i);
+    });
+
+    it("round-trips screenshotId on add-thread and ignores screen when a screenshot is pinned", async () => {
+      const agent = request.agent(createApp());
+      await signInAs(agent, "priya@northwind.test");
+
+      const version = await db.version.findFirst({
+        where: { deliverable: { title: "Checkout flow prototype" } },
+      });
+      expect(version).toBeTruthy();
+
+      const capture = await agent.post("/api/screenshots").send({
+        versionId: version!.id,
+        url: "https://external-proto.test/",
+      });
+      expect(capture.status).toBe(200);
+      const screenshotId = capture.body.screenshot.id;
+
+      const addThread = await agent.post("/api/actions/add-thread").send({
+        versionId: version!.id,
+        xPct: 25,
+        yPct: 60,
+        screenshotId,
+        screen: "/should/be/ignored",
+        body: "Is this button above the fold?",
+      });
+      expect(addThread.status).toBe(200);
+      expect(addThread.body.ok).toBe(true);
+
+      const deliverableResponse = await agent.get(
+        `/api/client/deliverables/${version!.deliverableId}?version=${version!.id}`
+      );
+      const newThread = deliverableResponse.body.activeVersion.threads.find(
+        (item: { comments: { body: string }[] }) =>
+          item.comments.some((c) => c.body === "Is this button above the fold?")
+      );
+      expect(newThread).toBeTruthy();
+      expect(newThread.screenshotId).toBe(screenshotId);
+      expect(newThread.screen).toBeNull();
+    });
+
+    it("rejects add-thread when the screenshotId belongs to a different version", async () => {
+      const agent = request.agent(createApp());
+      await signInAs(agent, "priya@northwind.test");
+
+      const checkoutVersion = await db.version.findFirst({
+        where: { deliverable: { title: "Checkout flow prototype" } },
+      });
+      const homepageVersion = await db.version.findFirst({
+        where: { deliverable: { title: "Homepage concept" } },
+        orderBy: { versionNumber: "asc" },
+      });
+      expect(checkoutVersion).toBeTruthy();
+      expect(homepageVersion).toBeTruthy();
+
+      const capture = await agent.post("/api/screenshots").send({
+        versionId: checkoutVersion!.id,
+        url: "https://mismatched-version.test/",
+      });
+      expect(capture.status).toBe(200);
+
+      const response = await agent.post("/api/actions/add-thread").send({
+        versionId: homepageVersion!.id,
+        xPct: 10,
+        yPct: 10,
+        screenshotId: capture.body.screenshot.id,
+        body: "This should be rejected.",
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toMatch(/no longer belongs/i);
+    });
+
+    it("refresh preview creates a second screenshot row without deleting the first", async () => {
+      const agent = request.agent(createApp());
+      await signInAs(agent, "priya@northwind.test");
+
+      const version = await db.version.findFirst({
+        where: { deliverable: { title: "Checkout flow prototype" } },
+      });
+      expect(version).toBeTruthy();
+
+      const first = await agent.post("/api/screenshots").send({
+        versionId: version!.id,
+        url: "https://refresh-me.test/",
+      });
+      expect(first.status).toBe(200);
+
+      const second = await agent.post("/api/screenshots").send({
+        versionId: version!.id,
+        url: "https://refresh-me.test/",
+      });
+      expect(second.status).toBe(200);
+      expect(second.body.screenshot.id).not.toBe(first.body.screenshot.id);
+
+      const stillThere = await db.prototypeScreenshot.findUnique({
+        where: { id: first.body.screenshot.id },
+      });
+      expect(stillThere).toBeTruthy();
+
+      const deliverableResponse = await agent.get(
+        `/api/client/deliverables/${version!.deliverableId}?version=${version!.id}`
+      );
+      const ids = deliverableResponse.body.activeVersion.screenshots.map(
+        (item: { id: string }) => item.id
+      );
+      expect(ids).toEqual(
+        expect.arrayContaining([first.body.screenshot.id, second.body.screenshot.id])
+      );
+    });
   });
 });

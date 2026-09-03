@@ -3,7 +3,7 @@ import { isCompanyAdmin } from "@/lib/access";
 import { sendForbidden, sendNotFound } from "@/server/errors";
 import { mutationErrorStatus } from "@/server/mutation-errors";
 import { requireUser } from "@/server/middleware";
-import { isMutationAction, runMutation } from "@/server/mutations";
+import { createPrototypeScreenshot, isMutationAction, runMutation } from "@/server/mutations";
 import {
   getBootstrap,
   getClientDeliverable,
@@ -181,6 +181,22 @@ export function registerApiRoutes(router: Router) {
       response.json(data);
     }
   );
+
+  // Not an /api/actions/:action mutation: capture is slow (headless browser navigation),
+  // so it gets its own route rather than sharing the generic mutation dispatcher's shape.
+  router.post("/api/screenshots", requireUser, async (request, response, next) => {
+    try {
+      const result = await createPrototypeScreenshot(request.user!, request.body ?? {});
+      if (!result.ok) {
+        const status = mutationErrorStatus(result.error, result.code);
+        response.status(status).json({ error: result.error });
+        return;
+      }
+      response.status(200).json({ ok: true, screenshot: result.data });
+    } catch (error) {
+      next(error);
+    }
+  });
 
   router.post("/api/actions/:action", requireUser, async (request, response, next) => {
     try {
