@@ -74,6 +74,7 @@ export const appRoutes = [
     ],
   },
   { path: "/proto/checkout", element: <PrototypePage /> },
+  { path: "/proto/checkout/:screen", element: <PrototypePage /> },
   { path: "*", element: <NotFoundPage /> },
 ];
 

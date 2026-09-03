@@ -1,24 +1,50 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { postScreenMessage, readNavigateMessage } from "@/lib/prototype-bridge";
 
 type Screen = "cart" | "shipping" | "confirmation";
 const SCREENS: Screen[] = ["cart", "shipping", "confirmation"];
 
-export function PrototypePage() {
-  const [screen, setScreen] = useState<Screen>("cart");
+function isScreen(value: string | undefined): value is Screen {
+  return !!value && SCREENS.includes(value as Screen);
+}
 
+/** Multi-page checkout demo. Each screen is a real URL path so comment anchoring
+ * works the same way as any same-origin hosted prototype URL. */
+export function PrototypePage() {
+  const { screen: screenParam } = useParams();
+  const navigate = useNavigate();
+  const screen = isScreen(screenParam) ? screenParam : null;
+
+  // Optional bridge for parents that prefer postMessage; URL observation is primary.
   useEffect(() => {
-    if (window.parent !== window) postScreenMessage(window.parent, screen);
+    if (!screen) return;
+    if (window.parent !== window) {
+      postScreenMessage(
+        window.parent,
+        `${window.location.pathname}${window.location.search}${window.location.hash}`
+      );
+    }
   }, [screen]);
 
   useEffect(() => {
+    if (!screen) return;
     function onMessage(e: MessageEvent) {
       const target = readNavigateMessage(e.data);
-      if (target && SCREENS.includes(target as Screen)) setScreen(target as Screen);
+      if (!target) return;
+      // Accept full path keys (/proto/checkout/shipping) or bare screen ids (shipping).
+      const match = SCREENS.find(
+        (s) => target === s || target.endsWith(`/proto/checkout/${s}`) || target.endsWith(`/${s}`)
+      );
+      if (match && match !== screen) navigate(`/proto/checkout/${match}`);
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, []);
+  }, [navigate, screen]);
+
+  if (!screen) {
+    return <Navigate to="/proto/checkout/cart" replace />;
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--surface-page)] p-6 font-sans">
@@ -45,9 +71,9 @@ export function PrototypePage() {
               <span>Total</span>
               <span>$146</span>
             </div>
-            <button className="wf-btn-solid mt-5 w-full" onClick={() => setScreen("shipping")}>
+            <Link className="wf-btn-solid mt-5 block w-full text-center" to="/proto/checkout/shipping">
               Continue to shipping
-            </button>
+            </Link>
           </div>
         ) : null}
 
@@ -63,12 +89,12 @@ export function PrototypePage() {
               </div>
             </div>
             <div className="mt-5 flex gap-2">
-              <button className="wf-btn" onClick={() => setScreen("cart")}>
+              <Link className="wf-btn" to="/proto/checkout/cart">
                 Back
-              </button>
-              <button className="wf-btn-solid flex-1" onClick={() => setScreen("confirmation")}>
+              </Link>
+              <Link className="wf-btn-solid flex-1 text-center" to="/proto/checkout/confirmation">
                 Place order
-              </button>
+              </Link>
             </div>
           </div>
         ) : null}
@@ -82,9 +108,9 @@ export function PrototypePage() {
             <p className="mt-2 text-center text-xs text-[var(--text-secondary)]">
               Order #10432 will ship within 2 business days.
             </p>
-            <button className="wf-btn mt-5 w-full" onClick={() => setScreen("cart")}>
+            <Link className="wf-btn mt-5 block w-full text-center" to="/proto/checkout/cart">
               Start over
-            </button>
+            </Link>
           </div>
         ) : null}
       </div>

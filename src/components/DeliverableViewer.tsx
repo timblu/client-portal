@@ -4,7 +4,14 @@ import { useApiAction } from "@/client/RouteState";
 import { DecisionBadge } from "@/components/DecisionBadge";
 import { AccountCluster } from "@/components/AccountCluster";
 import { formatDateTime, initials } from "@/lib/format";
-import { postNavigateMessage, readScreenMessage } from "@/lib/prototype-bridge";
+import {
+  isCrossOriginPrototypeUrl,
+  locationKeyFromHref,
+  navigateIframeToScreen,
+  readIframeLocationKey,
+  readScreenMessage,
+  screenLabel,
+} from "@/lib/prototype-bridge";
 
 const FILES_RAIL_KEY = "cp-files-rail-expanded";
 
@@ -120,10 +127,12 @@ export function DeliverableViewer({
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [prototypeScreen, setPrototypeScreen] = useState<string | null>(null);
+  const [externalPageUrl, setExternalPageUrl] = useState(activeVersion.prototypeUrl ?? "");
   const [screenResetVersionId, setScreenResetVersionId] = useState(activeVersion.id);
   if (activeVersion.id !== screenResetVersionId) {
     setScreenResetVersionId(activeVersion.id);
     setPrototypeScreen(null);
+    setExternalPageUrl(activeVersion.prototypeUrl ?? "");
   }
 
   const apiBase = `/api${basePath}`;
@@ -139,6 +148,19 @@ export function DeliverableViewer({
   const canDecide = currentUser.canDecide;
   const isPrototype = activeVersion.kind === "PROTOTYPE_URL";
   const canPin = !isPrototype || mode === "comment";
+  const isExternalPrototype = isPrototype && isCrossOriginPrototypeUrl(activeVersion.prototypeUrl);
+
+  const knownExternalPages = useMemo(() => {
+    if (!isExternalPrototype) return [] as string[];
+    const pages = new Set<string>();
+    if (activeVersion.prototypeUrl) {
+      pages.add(locationKeyFromHref(activeVersion.prototypeUrl));
+    }
+    for (const thread of activeVersion.threads) {
+      if (thread.screen) pages.add(thread.screen);
+    }
+    return [...pages];
+  }, [isExternalPrototype, activeVersion.prototypeUrl, activeVersion.threads]);
 
   const sortedThreads = useMemo(
     () =>
@@ -199,13 +221,54 @@ export function DeliverableViewer({
 
   useEffect(() => {
     if (!isPrototype) return;
-    function onMessage(e: MessageEvent) {
-      const screen = readScreenMessage(e.data);
-      if (screen) setPrototypeScreen(screen);
+
+    function syncFromIframe() {
+      const iframe = iframeRef.current;
+      if (!iframe) return;
+      const key = readIframeLocationKey(iframe);
+      if (key) {
+        setPrototypeScreen(key);
+        return;
+      }
+      // Cross-origin: browser blocks reading the iframe URL. Keep comments scoped via the
+      // manual page URL field (seeded from the prototype entry URL).
+      if (isExternalPrototype && activeVersion.prototypeUrl) {
+        setPrototypeScreen((prev) => prev ?? locationKeyFromHref(activeVersion.prototypeUrl!));
+      }
     }
+
+    function onMessage(e: MessageEvent) {
+      // Cross-origin (or SPA) prototypes that emit page keys via postMessage.
+      const screen = readScreenMessage(e.data);
+      if (screen) {
+        const key = locationKeyFromHref(screen);
+        setPrototypeScreen(key);
+        setExternalPageUrl(key);
+      }
+    }
+
+    syncFromIframe();
+    const interval = window.setInterval(syncFromIframe, 300);
+    const iframe = iframeRef.current;
+    iframe?.addEventListener("load", syncFromIframe);
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [isPrototype]);
+    return () => {
+      window.clearInterval(interval);
+      iframe?.removeEventListener("load", syncFromIframe);
+      window.removeEventListener("message", onMessage);
+    };
+  }, [isPrototype, isExternalPrototype, activeVersion.prototypeUrl, activeVersion.id]);
+
+  function applyExternalPageUrl(raw: string, { reloadIframe = true } = {}) {
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    const key = locationKeyFromHref(trimmed);
+    setExternalPageUrl(key);
+    setPrototypeScreen(key);
+    if (reloadIframe && iframeRef.current) {
+      navigateIframeToScreen(iframeRef.current, key, activeVersion.prototypeUrl);
+    }
+  }
 
   function selectThread(threadId: string) {
     setActiveThreadId(threadId);
@@ -214,9 +277,13 @@ export function DeliverableViewer({
       isPrototype &&
       thread?.screen &&
       thread.screen !== prototypeScreen &&
-      iframeRef.current?.contentWindow
+      iframeRef.current
     ) {
-      postNavigateMessage(iframeRef.current.contentWindow, thread.screen);
+      if (isExternalPrototype) {
+        setExternalPageUrl(thread.screen);
+        setPrototypeScreen(thread.screen);
+      }
+      navigateIframeToScreen(iframeRef.current, thread.screen, activeVersion.prototypeUrl);
     }
   }
 
@@ -261,7 +328,11 @@ export function DeliverableViewer({
         versionId: activeVersion.id,
         xPct: x,
         yPct: y,
-        screen: isPrototype ? prototypeScreen : undefined,
+        screen: isPrototype
+          ? isExternalPrototype
+            ? locationKeyFromHref(externalPageUrl || activeVersion.prototypeUrl || "")
+            : prototypeScreen
+          : undefined,
         body,
       });
       if (!result.ok) {
@@ -558,6 +629,49 @@ export function DeliverableViewer({
           ) : null}
 
           <div className="min-h-0 flex-1 overflow-auto p-4">
+            {isExternalPrototype ? (
+              <div className="mb-3 rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--surface-page)] px-3 py-2">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[0.6875rem] font-medium uppercase tracking-[0.04em] text-[var(--text-secondary)]">
+                    Commenting on page
+                  </span>
+                  <span className="text-xs text-[var(--text-secondary)]">
+                    External prototypes can&apos;t share their current URL with us. After you navigate
+                    inside the prototype, paste that page&apos;s URL here before leaving a comment —
+                    pins stay on that page only.
+                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      className="wf-input min-w-[16rem] flex-1 text-xs"
+                      value={externalPageUrl}
+                      onChange={(e) => setExternalPageUrl(e.target.value)}
+                      onBlur={() => applyExternalPageUrl(externalPageUrl, { reloadIframe: false })}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          applyExternalPageUrl(externalPageUrl, { reloadIframe: true });
+                        }
+                      }}
+                      placeholder="https://…/current-page"
+                      aria-label="Page URL for comments"
+                      list="prototype-known-pages"
+                    />
+                    <datalist id="prototype-known-pages">
+                      {knownExternalPages.map((page) => (
+                        <option key={page} value={page} />
+                      ))}
+                    </datalist>
+                    <button
+                      type="button"
+                      className="wf-btn text-xs"
+                      onClick={() => applyExternalPageUrl(externalPageUrl, { reloadIframe: true })}
+                    >
+                      Load page
+                    </button>
+                  </div>
+                </label>
+              </div>
+            ) : null}
             {compareEnabled ? (
               <div className="flex min-h-full gap-3">
                 <div className="min-w-0 flex-1">
@@ -668,7 +782,7 @@ export function DeliverableViewer({
                       <span className="flex h-5 w-5 items-center justify-center rounded-full border border-[var(--action-primary-bg)] text-[0.625rem] text-[var(--action-primary-bg)]">
                         {idx + 1}
                       </span>
-                      {thread.screen ? <span className="wf-tag">{thread.screen}</span> : null}
+                      {thread.screen ? <span className="wf-tag">{screenLabel(thread.screen)}</span> : null}
                       {thread.pinnedToTop ? <span className="wf-tag">Pinned</span> : null}
                       {thread.resolved ? <span className="wf-tag">Resolved</span> : null}
                     </span>
@@ -970,7 +1084,7 @@ function ReviewCanvas({
       {canPin ? (
         <p className="mt-3 text-center text-xs text-[var(--text-secondary)]">
           {isPrototype && prototypeScreen
-            ? `Click to leave a comment on the ${prototypeScreen} screen.`
+            ? `Click to leave a comment on the ${screenLabel(prototypeScreen)} page.`
             : "Click anywhere on the file to leave a comment."}
         </p>
       ) : null}

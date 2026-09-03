@@ -271,7 +271,7 @@ describe("api routes", () => {
       versionId: version!.id,
       xPct: 50,
       yPct: 40,
-      screen: "shipping",
+      screen: "/proto/checkout/shipping",
       body: "Should this field be required?",
     });
     expect(response.status).toBe(200);
@@ -284,7 +284,7 @@ describe("api routes", () => {
       (item: { comments: { body: string }[] }) =>
         item.comments.some((c) => c.body === "Should this field be required?")
     );
-    expect(newThread.screen).toBe("shipping");
+    expect(newThread.screen).toBe("/proto/checkout/shipping");
   });
 
   it("ignores the screen field for comments on non-prototype versions", async () => {
@@ -301,7 +301,7 @@ describe("api routes", () => {
       versionId: version!.id,
       xPct: 10,
       yPct: 10,
-      screen: "shipping",
+      screen: "/proto/checkout/shipping",
       body: "This should stay unscoped.",
     });
     expect(response.status).toBe(200);

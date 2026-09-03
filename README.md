@@ -98,7 +98,7 @@ Prisma and database code stay server-side. Do not import `@/lib/db` from client 
 | `/client/deliverables/:deliverableId` | Client | Deliverable viewer + decisions |
 | `/client/members` | Company admin | Member directory |
 | `/client/members/:memberId` | Company admin | Member detail |
-| `/proto/checkout` | Public | Hosted prototype demo (iframe target) |
+| `/proto/checkout/:screen` | Public | Hosted multi-page prototype demo (iframe target; screens: cart, shipping, confirmation) |
 
 ## Source layout
 

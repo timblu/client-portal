@@ -453,7 +453,7 @@ export async function addThread(actor: User, body: Record<string, unknown>): Pro
 
   try {
     const version = await requireProjectAccessForVersion(actor, versionId);
-    const rawScreen = String(body.screen ?? "").trim().slice(0, 100);
+    const rawScreen = String(body.screen ?? "").trim().slice(0, 500);
     const screen = version.kind === "PROTOTYPE_URL" && rawScreen ? rawScreen : null;
     const thread = await db.commentThread.create({
       data: { versionId, xPct, yPct, screen },

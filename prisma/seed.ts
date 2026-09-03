@@ -150,13 +150,19 @@ async function main() {
       deliverableId: checkoutProto.id,
       versionNumber: 1,
       kind: "PROTOTYPE_URL",
-      prototypeUrl: "/proto/checkout",
+      prototypeUrl: "/proto/checkout/cart",
       decisionState: "PENDING",
     },
   });
 
   const threadC = await db.commentThread.create({
-    data: { versionId: checkoutProtoV1.id, screen: "shipping", xPct: 50, yPct: 55, pinnedToTop: true },
+    data: {
+      versionId: checkoutProtoV1.id,
+      screen: "/proto/checkout/shipping",
+      xPct: 50,
+      yPct: 55,
+      pinnedToTop: true,
+    },
   });
   await db.comment.create({
     data: { threadId: threadC.id, authorId: priya.id, body: "Should the ZIP field validate on blur?" },

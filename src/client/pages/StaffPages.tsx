@@ -389,7 +389,7 @@ export function StaffProjectPage() {
             <label className="mb-1.5 block text-[0.6875rem] uppercase tracking-[0.04em] text-[var(--text-secondary)]">
               Prototype URL
             </label>
-            <input name="prototypeUrl" className="wf-input w-full" placeholder="/proto/checkout" />
+            <input name="prototypeUrl" className="wf-input w-full" placeholder="/proto/checkout/cart" />
           </div>
           <div>
             <label className="mb-1.5 block text-[0.6875rem] uppercase tracking-[0.04em] text-[var(--text-secondary)]">
@@ -464,7 +464,7 @@ export function StaffDeliverablePage() {
             </select>
           </div>
           <input name="fileUrl" placeholder="/seed/homepage-v2.svg" className="wf-input w-full" />
-          <input name="prototypeUrl" placeholder="/proto/checkout" className="wf-input w-full" />
+          <input name="prototypeUrl" placeholder="/proto/checkout/cart" className="wf-input w-full" />
           <textarea name="content" rows={3} placeholder="Markdown content" className="wf-input w-full" />
           <button type="submit" className="wf-btn-solid w-fit">
             Add version
