@@ -1318,7 +1318,7 @@ function ArtifactSurface({
   }
 
   return (
-    <div className="relative h-[600px] w-full">
+    <div className="relative h-[1000px] w-full">
       <iframe
         ref={iframeRef}
         src={version.prototypeUrl ?? ""}

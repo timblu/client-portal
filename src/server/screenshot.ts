@@ -9,7 +9,7 @@ import { chromium } from "playwright";
 
 const SCREENSHOTS_DIR = path.join(process.cwd(), "data", "screenshots");
 const CAPTURE_TIMEOUT_MS = 25_000;
-const VIEWPORT = { width: 1280, height: 800 };
+const VIEWPORT = { width: 1440, height: 1200, deviceScaleFactor: 3} ;
 
 export class ScreenshotCaptureError extends Error {
   constructor(message: string) {
