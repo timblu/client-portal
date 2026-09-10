@@ -6,7 +6,7 @@ import { PageHeader, PageShell, ListHead } from "@/components/PageShell";
 import { DecisionBadge } from "@/components/DecisionBadge";
 import { MembersWorkspace } from "@/components/members/MembersWorkspace";
 import { MemberDetail } from "@/components/members/MemberDetail";
-import { DeliverableViewer } from "@/components/DeliverableViewer";
+import { ClientDeliverableViewer } from "@/components/review/ClientDeliverableViewer";
 
 type ClientProjectsData = {
   projects: {
@@ -46,7 +46,7 @@ type ClientMemberData = {
   isLastAdmin: boolean;
 };
 
-type DeliverableViewData = Parameters<typeof DeliverableViewer>[0];
+type DeliverableViewData = Parameters<typeof ClientDeliverableViewer>[0];
 
 export function ClientHomePage() {
   const navigate = useNavigate();
@@ -198,7 +198,7 @@ export function ClientDeliverablePage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <DeliverableViewer {...data} onMutate={revalidate} />
+      <ClientDeliverableViewer {...data} onMutate={revalidate} />
     </div>
   );
 }

@@ -249,6 +249,28 @@ describe("api routes", () => {
     expect(response.body.error).toMatch(/invalid project role/i);
   });
 
+  it("includes company info and each sibling's full version list on the client deliverable payload", async () => {
+    const agent = request.agent(createApp());
+    await signInAs(agent, "casey@northwind.test");
+
+    const version = await db.version.findFirst({
+      where: { deliverable: { title: "Homepage concept" } },
+      orderBy: { versionNumber: "asc" },
+    });
+    expect(version).toBeTruthy();
+
+    const response = await agent.get(`/api/client/deliverables/${version!.deliverableId}`);
+    expect(response.status).toBe(200);
+    expect(response.body.company).toEqual({ name: "Northwind Retail", logoUrl: "/seed/northwind-logo.svg" });
+
+    const homepage = response.body.siblings.find((item: { id: string }) => item.id === version!.deliverableId);
+    expect(homepage).toBeTruthy();
+    expect(homepage.versions.length).toBeGreaterThanOrEqual(2);
+    expect(homepage.versions[0].versionNumber).toBeLessThan(
+      homepage.versions[homepage.versions.length - 1].versionNumber
+    );
+  });
+
   it("preserves nullable thread coordinates in deliverable responses", async () => {
     const agent = request.agent(createApp());
     await signInAs(agent, "sam@agency.test");

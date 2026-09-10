@@ -400,6 +400,7 @@ describe("deliverable viewer and members", () => {
               canDecide: false,
             },
             basePath: "/client",
+            company: { name: "Northwind Retail", logoUrl: null },
             crumb: { href: "/client/projects/p1", label: "Website" },
             siblings: [],
           }),
@@ -410,7 +411,7 @@ describe("deliverable viewer and members", () => {
     renderAt("/client/deliverables/d1");
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Homepage" })).toBeInTheDocument();
+      expect(screen.getByText("Homepage")).toBeInTheDocument();
     });
 
     expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
@@ -650,6 +651,7 @@ describe("deliverable viewer and members", () => {
               canDecide: true,
             },
             basePath: "/client",
+            company: { name: "Northwind Retail", logoUrl: null },
             crumb: { href: "/client/projects/p1", label: "Website" },
             siblings: [],
           }),
@@ -685,6 +687,7 @@ describe("deliverable viewer and members", () => {
               canDecide: true,
             },
             basePath: "/client",
+            company: { name: "Northwind Retail", logoUrl: null },
             crumb: { href: "/client/projects/p1", label: "Website" },
             siblings: [],
           }),
@@ -696,7 +699,7 @@ describe("deliverable viewer and members", () => {
     renderAt("/client/deliverables/d1");
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Homepage" })).toBeInTheDocument();
+      expect(screen.getByText("Homepage")).toBeInTheDocument();
     });
 
     await user.click(screen.getByRole("button", { name: "Next version" }));
@@ -741,33 +744,35 @@ describe("deliverable viewer and members", () => {
               canDecide: true,
             },
             basePath: "/client",
+            company: { name: "Northwind Retail", logoUrl: null },
             crumb: { href: "/client/projects/p1", label: "Website" },
             siblings: [],
           }),
           { status: 200 }
         );
       },
-      "/api/actions/submit-decision": () =>
-        new Response(JSON.stringify({ ok: false, error: "Decision failed." }), { status: 400 }),
+      "/api/actions/add-thread": () =>
+        new Response(JSON.stringify({ ok: false, error: "Could not save comment." }), { status: 400 }),
     });
 
     const user = userEvent.setup();
     renderAt("/client/deliverables/d1");
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
+      expect(screen.getByAltText("Design version")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: "Approve" }));
-    await user.click(screen.getByRole("button", { name: "Confirm" }));
+    await user.click(screen.getByAltText("Design version"));
+    await user.type(screen.getByPlaceholderText("Leave a comment"), "Looks off");
+    await user.click(screen.getByRole("button", { name: "Comment" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Decision failed.")).toBeInTheDocument();
+      expect(screen.getByText("Could not save comment.")).toBeInTheDocument();
     });
 
     expect(deliverableFetches).toBe(1);
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/actions/submit-decision",
+      "/api/actions/add-thread",
       expect.objectContaining({ method: "POST" })
     );
   });

@@ -9,6 +9,8 @@ export function TopNav({
   currentUserId,
   navLinks = [],
   switchTargets = [],
+  title = "Review Portal",
+  accentAvatar = false,
 }: {
   homeHref: string;
   roleLabel: string;
@@ -17,13 +19,17 @@ export function TopNav({
   tag?: string;
   navLinks?: { href: string; label: string }[];
   switchTargets?: SwitchTarget[];
+  /** Brand title shown before the nav links (client shell rebrands to "Zinc Design Portal"). */
+  title?: string;
+  /** Accents the account avatar with the brand blue (client shell only). */
+  accentAvatar?: boolean;
 }) {
   return (
     <header className="bg-[var(--surface-page)]">
       <div className="flex items-center justify-between px-6 py-4">
         <div className="flex items-center gap-5">
           <Link to={homeHref} className="text-sm font-semibold tracking-tight">
-            Review Portal
+            {title}
           </Link>
           {navLinks.map((link) => (
             <Link
@@ -40,6 +46,7 @@ export function TopNav({
           roleLabel={roleLabel}
           currentUserId={currentUserId}
           switchTargets={switchTargets}
+          accentAvatar={accentAvatar}
         />
       </div>
     </header>

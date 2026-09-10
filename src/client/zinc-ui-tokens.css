@@ -15,8 +15,15 @@
   --surface-page:     #FFFFFF;
   --surface-subtle:   var(--gray-50);
   --surface-sunken:   var(--gray-100);
+  --surface-raised:   #FFFFFF;
   --surface-inverse:  var(--slate-950);
   --surface-brand:    var(--blue-700);  /* ★ */
+
+  /* Accent surfaces for selected/active rows (project rail, history chips,
+   * comments trigger) — reuse the blue ladder rather than reaching for
+   * primitives in component code. */
+  --surface-selected:        var(--blue-50);
+  --surface-selected-strong: var(--blue-100);
 
   --border-subtle:    var(--gray-200);
   --border-default:   var(--gray-300);
@@ -90,6 +97,7 @@
   /* ---------- shape ---------- */
   --radius-control: 4px;
   --radius-card:    8px;
+  --radius-panel:   16px;
   --radius-pill:    999px;
 
   /* ---------- elevation ----------
@@ -99,6 +107,7 @@
   --elevation-card:     0 1px 2px rgba(26, 40, 55, 0.08);
   --elevation-dropdown: 0 4px 12px rgba(26, 40, 55, 0.12);
   --elevation-modal:    0 12px 32px rgba(26, 40, 55, 0.18);
+  --elevation-floating: 0 4px 12px -4px rgba(39, 41, 42, 0.25);
 
   /* ---------- spacing (4px base scale) ---------- */
   --space-1: 4px;
@@ -130,8 +139,12 @@ html.dark {
   --surface-page:     var(--slate-950);
   --surface-subtle:   var(--slate-900);
   --surface-sunken:   var(--gray-900);
+  --surface-raised:   var(--slate-900);
   --surface-inverse:  var(--gray-50);
   --surface-brand:    var(--blue-400);
+
+  --surface-selected:        var(--blue-950);
+  --surface-selected-strong: var(--blue-900);
 
   --border-subtle:    var(--gray-800);
   --border-default:   var(--gray-700);

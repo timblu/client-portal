@@ -102,6 +102,18 @@ body {
   box-shadow: var(--elevation-card);
 }
 
+/* Review portal (client deliverable viewer) — tinted page background so the
+ * raised rail/toolbar panels read as cards, matching the Zinc design frame. */
+.review-page {
+  background: var(--surface-subtle);
+}
+
+.review-panel {
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+  border-radius: var(--radius-panel);
+}
+
 .wf-list {
   border: 1px solid var(--border-subtle);
   background: var(--surface-page);
@@ -375,6 +387,14 @@ html.dark .wf-select {
   font-weight: 600;
   letter-spacing: 0.02em;
   border: 1px solid var(--border-subtle);
+}
+
+/* Client portal chrome (Zinc Design Portal branding) accents the avatar
+ * with the brand blue instead of the neutral staff/default treatment. */
+.wf-avatar-accent {
+  background: var(--surface-selected-strong);
+  border-color: var(--action-primary-bg);
+  color: var(--action-primary-bg);
 }
 
 details > summary {

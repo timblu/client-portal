@@ -1,77 +1,23 @@
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { Link } from "react-router-dom";
 import { useApiAction } from "@/client/RouteState";
-import { captureScreenshot, type CapturedScreenshot } from "@/client/api";
+import { ArtifactSurface } from "@/components/review/ArtifactSurface";
+import { ReviewCanvas } from "@/components/review/ReviewCanvas";
+import { useDeliverableReview } from "@/components/review/useDeliverableReview";
+import type { ActiveVersion, CurrentUser, SiblingDeliverable, VersionSummary } from "@/components/review/types";
 import { DecisionBadge } from "@/components/DecisionBadge";
 import { AccountCluster } from "@/components/AccountCluster";
 import { formatDateTime, initials } from "@/lib/format";
-import {
-  isCrossOriginPrototypeUrl,
-  locationKeyFromHref,
-  navigateIframeToScreen,
-  readIframeLocationKey,
-  readScreenMessage,
-  screenLabel,
-} from "@/lib/prototype-bridge";
+import { screenLabel } from "@/lib/prototype-bridge";
 
 const FILES_RAIL_KEY = "cp-files-rail-expanded";
 
-type Comment = {
-  id: string;
-  body: string;
-  createdAt: string;
-  author: { name: string; role: string };
-};
-
-type Thread = {
-  id: string;
-  xPct: number | null;
-  yPct: number | null;
-  screen: string | null;
-  screenshotId: string | null;
-  resolved: boolean;
-  pinnedToTop: boolean;
-  comments: Comment[];
-};
-
-type Screenshot = {
-  id: string;
-  sourceUrl: string;
-  pageLabel: string | null;
-  imageUrl: string;
-  width: number;
-  height: number;
-  createdAt: string;
-};
-
-type VersionSummary = { id: string; versionNumber: number; decisionState: string };
-
-type ActiveVersion = {
-  id: string;
-  versionNumber: number;
-  kind: "STATIC_IMAGE" | "STATIC_PDF" | "MARKDOWN" | "PROTOTYPE_URL";
-  fileUrl: string | null;
-  content: string | null;
-  prototypeUrl: string | null;
-  decisionState: string;
-  decisionComment: string | null;
-  decidedAt: string | null;
-  decidedByName: string | null;
-  threads: Thread[];
-  screenshots: Screenshot[];
-};
-
-type CurrentUser = { id: string; name: string; role: "STAFF" | "CLIENT"; canDecide: boolean };
-
-type SiblingDeliverable = {
-  id: string;
-  title: string;
-  type: "DESIGN" | "DOC";
-  decisionState: string;
-};
-
 function decisionShort(state: string) {
   return state === "PENDING" ? "pending" : state.toLowerCase().replace("_", " ");
+}
+
+function latestDecisionState(sibling: SiblingDeliverable) {
+  return sibling.versions[sibling.versions.length - 1]?.decisionState ?? "PENDING";
 }
 
 function readFilesRailExpanded() {
@@ -90,6 +36,11 @@ function persistFilesRailExpanded(expanded: boolean) {
   }
 }
 
+// Staff deliverable viewer — 3-column layout with decisions, the classic
+// Interact/Comment segmented control, and the cross-origin capture banner.
+// Shares its underlying review state/mutations (useDeliverableReview) and
+// canvas rendering (ReviewCanvas) with the client-facing viewer so the two
+// stay behaviorally consistent without duplicating logic.
 export function DeliverableViewer({
   deliverableId,
   title,
@@ -113,107 +64,71 @@ export function DeliverableViewer({
   chrome?: { homeHref: string; userName: string; roleLabel: string };
   onMutate?: () => void;
 }) {
-  const navigate = useNavigate();
   const runAction = useApiAction();
   const [, startTransition] = useTransition();
-  const canvasRef = useRef<HTMLDivElement>(null);
   const fileSwitcherRef = useRef<HTMLDivElement>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const [mode, setMode] = useState<"interact" | "comment">("comment");
   const [filesRailExpanded, setFilesRailExpanded] = useState(readFilesRailExpanded);
   const [fileSwitcherOpen, setFileSwitcherOpen] = useState(false);
   const [fileSearch, setFileSearch] = useState("");
-  const [compareEnabled, setCompareEnabled] = useState(false);
-  const [compareVersionId, setCompareVersionId] = useState<string | null>(null);
-  const [compareVersion, setCompareVersion] = useState<ActiveVersion | null>(null);
-  const [compareLoading, setCompareLoading] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [draftPin, setDraftPin] = useState<{ x: number; y: number } | null>(null);
-  const [draftBody, setDraftBody] = useState("");
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [decisionAction, setDecisionAction] = useState<
     "APPROVED" | "CHANGES_REQUESTED" | "REJECTED" | null
   >(null);
   const [decisionComment, setDecisionComment] = useState("");
   const [confirmOpenThreads, setConfirmOpenThreads] = useState(false);
-  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
-  const [mutationError, setMutationError] = useState<string | null>(null);
-  const [prototypeScreen, setPrototypeScreen] = useState<string | null>(null);
-  const [activeScreenshotId, setActiveScreenshotId] = useState<string | null>(null);
-  const [optimisticScreenshot, setOptimisticScreenshot] = useState<CapturedScreenshot | null>(null);
-  const [captureStatus, setCaptureStatus] = useState<"idle" | "capturing" | "error">("idle");
-  const [captureError, setCaptureError] = useState<string | null>(null);
-  const [screenResetVersionId, setScreenResetVersionId] = useState(activeVersion.id);
-  if (activeVersion.id !== screenResetVersionId) {
-    setScreenResetVersionId(activeVersion.id);
-    setPrototypeScreen(null);
-    setActiveScreenshotId(null);
-    setOptimisticScreenshot(null);
-    setCaptureStatus("idle");
-    setCaptureError(null);
-  }
 
-  const apiBase = `/api${basePath}`;
-  const sortedVersions = useMemo(
-    () => [...versions].sort((a, b) => a.versionNumber - b.versionNumber),
-    [versions]
-  );
-  const activeVersionIndex = sortedVersions.findIndex((v) => v.id === activeVersion.id);
-  const hasPrevVersion = activeVersionIndex > 0;
-  const hasNextVersion = activeVersionIndex < sortedVersions.length - 1;
+  const {
+    canvasRef,
+    iframeRef,
+    mode,
+    setMode,
+    compareEnabled,
+    compareVersionId,
+    setCompareVersionId,
+    compareVersion,
+    compareLoading,
+    toggleCompare,
+    historyOpen,
+    setHistoryOpen,
+    draftPin,
+    draftBody,
+    setDraftBody,
+    activeThreadId,
+    replyDrafts,
+    setReplyDrafts,
+    mutationError,
+    setMutationError,
+    prototypeScreen,
+    captureStatus,
+    captureError,
+    refreshPreview,
+    screenshots,
+    activeScreenshot,
+    setActiveScreenshotId,
+    threadScreenshotTag,
+    sortedVersions,
+    activeVersionIndex,
+    hasPrevVersion,
+    hasNextVersion,
+    openThreadCount,
+    canPin,
+    isExternalPrototype,
+    sortedThreads,
+    selectThread,
+    navigateToVersion,
+    handleCanvasClick,
+    cancelDraftPin,
+    submitDraftPin,
+    submitReply,
+    toggleThreadPinned,
+    toggleThreadResolved,
+  } = useDeliverableReview({ deliverableId, basePath, activeVersion, versions, onMutate });
 
-  const openThreadCount = activeVersion.threads.filter((t) => !t.resolved).length;
   const canDecide = currentUser.canDecide;
-  const isPrototype = activeVersion.kind === "PROTOTYPE_URL";
-  const canPin = !isPrototype || mode === "comment";
-  const isExternalPrototype = isPrototype && isCrossOriginPrototypeUrl(activeVersion.prototypeUrl);
 
-  // Cross-origin prototypes (Figma Make, Framer, external staging links, etc.) can't share
-  // their live URL with us, so comments pin to a server-captured screenshot instead of the
-  // iframe. `optimisticScreenshot` shows a just-captured image immediately, before the
-  // parent's data refetch (onMutate) lands it in activeVersion.screenshots.
-  const screenshots = useMemo(() => {
-    const known = activeVersion.screenshots ?? [];
-    if (optimisticScreenshot && !known.some((s) => s.id === optimisticScreenshot.id)) {
-      return [optimisticScreenshot, ...known];
-    }
-    return known;
-  }, [activeVersion.screenshots, optimisticScreenshot]);
-
-  const activeScreenshot = useMemo(
-    () => screenshots.find((s) => s.id === activeScreenshotId) ?? screenshots[0] ?? null,
-    [screenshots, activeScreenshotId]
+  const filteredSiblings = siblings.filter((s) =>
+    s.title.toLowerCase().includes(fileSearch.trim().toLowerCase())
   );
-
-  const screenshotById = useMemo(() => {
-    const map = new Map<string, Screenshot>();
-    for (const shot of screenshots) map.set(shot.id, shot);
-    return map;
-  }, [screenshots]);
-
-  function threadScreenshotTag(thread: Thread): string | null {
-    if (!thread.screenshotId) return null;
-    const shot = screenshotById.get(thread.screenshotId);
-    if (!shot) return "Preview";
-    return screenshots[0]?.id === shot.id ? "Current preview" : `Older preview · ${formatDateTime(shot.createdAt)}`;
-  }
-
-  const sortedThreads = useMemo(
-    () =>
-      [...activeVersion.threads].sort((a, b) => {
-        if (a.pinnedToTop !== b.pinnedToTop) return a.pinnedToTop ? -1 : 1;
-        if (a.resolved !== b.resolved) return a.resolved ? 1 : -1;
-        return 0;
-      }),
-    [activeVersion.threads]
-  );
-
-  const filteredSiblings = useMemo(() => {
-    const query = fileSearch.trim().toLowerCase();
-    if (!query) return siblings;
-    return siblings.filter((s) => s.title.toLowerCase().includes(query));
-  }, [siblings, fileSearch]);
 
   useEffect(() => {
     if (!fileSwitcherOpen) return;
@@ -227,211 +142,9 @@ export function DeliverableViewer({
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [fileSwitcherOpen]);
 
-  useEffect(() => {
-    if (!compareEnabled || !compareVersionId || compareVersionId === activeVersion.id) {
-      setCompareVersion(null);
-      setCompareLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setCompareLoading(true);
-    fetch(`${apiBase}/deliverables/${deliverableId}?version=${encodeURIComponent(compareVersionId)}`)
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to load compare version");
-        return res.json();
-      })
-      .then((data) => {
-        if (!cancelled) setCompareVersion(data.activeVersion as ActiveVersion);
-      })
-      .catch(() => {
-        if (!cancelled) setCompareVersion(null);
-      })
-      .finally(() => {
-        if (!cancelled) setCompareLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [compareEnabled, compareVersionId, activeVersion.id, apiBase, deliverableId]);
-
-  // Same-origin prototypes only — their iframe URL is readable, so comments key off the
-  // actual page path/hash. Cross-origin prototypes use the screenshot capture flow below.
-  useEffect(() => {
-    if (!isPrototype || isExternalPrototype) return;
-
-    function syncFromIframe() {
-      const iframe = iframeRef.current;
-      if (!iframe) return;
-      const key = readIframeLocationKey(iframe);
-      if (key) setPrototypeScreen(key);
-    }
-
-    function onMessage(e: MessageEvent) {
-      const screen = readScreenMessage(e.data);
-      if (screen) setPrototypeScreen(locationKeyFromHref(screen));
-    }
-
-    syncFromIframe();
-    const interval = window.setInterval(syncFromIframe, 300);
-    const iframe = iframeRef.current;
-    iframe?.addEventListener("load", syncFromIframe);
-    window.addEventListener("message", onMessage);
-    return () => {
-      window.clearInterval(interval);
-      iframe?.removeEventListener("load", syncFromIframe);
-      window.removeEventListener("message", onMessage);
-    };
-  }, [isPrototype, isExternalPrototype, activeVersion.id]);
-
-  // Cross-origin prototypes: auto-capture a screenshot the first time this version is
-  // opened with no captures yet. Refresh (below) re-runs this without overwriting old rows.
-  useEffect(() => {
-    if (!isExternalPrototype) return;
-    if (screenshots.length > 0) return;
-    if (!activeVersion.prototypeUrl) return;
-
-    let cancelled = false;
-    const versionId = activeVersion.id;
-    const url: string = activeVersion.prototypeUrl;
-
-    async function run() {
-      setCaptureStatus("capturing");
-      setCaptureError(null);
-      const result = await captureScreenshot(versionId, url).catch(
-        () => ({ ok: false as const, error: "Unable to capture that page.", status: 0 })
-      );
-      if (cancelled) return;
-      if (!result.ok) {
-        setCaptureStatus("error");
-        setCaptureError(result.error);
-        return;
-      }
-      setCaptureStatus("idle");
-      setOptimisticScreenshot(result.screenshot);
-      setActiveScreenshotId(result.screenshot.id);
-      onMutate?.();
-    }
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [isExternalPrototype, screenshots.length, activeVersion.id, activeVersion.prototypeUrl, onMutate]);
-
-  function refreshPreview() {
-    if (!activeVersion.prototypeUrl) return;
-    setCaptureStatus("capturing");
-    setCaptureError(null);
-    captureScreenshot(activeVersion.id, activeVersion.prototypeUrl)
-      .then((result) => {
-        if (!result.ok) {
-          setCaptureStatus("error");
-          setCaptureError(result.error);
-          return;
-        }
-        setCaptureStatus("idle");
-        setOptimisticScreenshot(result.screenshot);
-        setActiveScreenshotId(result.screenshot.id);
-        onMutate?.();
-      })
-      .catch(() => {
-        setCaptureStatus("error");
-        setCaptureError("Unable to capture that page.");
-      });
-  }
-
-  function selectThread(threadId: string) {
-    setActiveThreadId(threadId);
-    const thread = activeVersion.threads.find((t) => t.id === threadId);
-    if (!thread) return;
-
-    if (isExternalPrototype && thread.screenshotId) {
-      // Switch the canvas to whichever screenshot this thread was pinned on, so the pin
-      // lines up (older threads may belong to a capture that's since been refreshed).
-      if (thread.screenshotId !== activeScreenshot?.id) {
-        setActiveScreenshotId(thread.screenshotId);
-      }
-      setMode("comment");
-      return;
-    }
-
-    if (isPrototype && !isExternalPrototype && thread.screen && thread.screen !== prototypeScreen && iframeRef.current) {
-      navigateIframeToScreen(iframeRef.current, thread.screen, activeVersion.prototypeUrl);
-    }
-  }
-
-  function navigateToVersion(versionId: string) {
-    navigate(`${basePath}/deliverables/${deliverableId}?version=${versionId}`);
-  }
-
   function toggleFilesRailExpanded(expanded: boolean) {
     setFilesRailExpanded(expanded);
     persistFilesRailExpanded(expanded);
-  }
-
-  function toggleCompare() {
-    if (compareEnabled) {
-      setCompareEnabled(false);
-      return;
-    }
-    const prev = sortedVersions[activeVersionIndex - 1];
-    const fallback = sortedVersions.find((v) => v.id !== activeVersion.id);
-    setCompareVersionId(prev?.id ?? fallback?.id ?? null);
-    setCompareEnabled(true);
-  }
-
-  function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
-    if (!canPin) return;
-    // Cross-origin canvas is the captured image — no pinning while a capture is in
-    // flight, failed, or hasn't happened yet.
-    if (isExternalPrototype && (!activeScreenshot || captureStatus !== "idle")) return;
-    if (!canvasRef.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-    setDraftPin({ x, y });
-    setActiveThreadId(null);
-  }
-
-  function submitDraftPin() {
-    if (!draftPin || !draftBody.trim()) return;
-    const body = draftBody;
-    const { x, y } = draftPin;
-    setDraftPin(null);
-    setDraftBody("");
-    startTransition(async () => {
-      const result = await runAction("add-thread", {
-        versionId: activeVersion.id,
-        xPct: x,
-        yPct: y,
-        screen: isPrototype && !isExternalPrototype ? prototypeScreen : undefined,
-        screenshotId: isExternalPrototype ? activeScreenshot?.id : undefined,
-        body,
-      });
-      if (!result.ok) {
-        setMutationError(result.error);
-        return;
-      }
-      setMutationError(null);
-      onMutate?.();
-    });
-  }
-
-  function submitReply(threadId: string) {
-    const body = replyDrafts[threadId];
-    if (!body?.trim()) return;
-    setReplyDrafts((prev) => ({ ...prev, [threadId]: "" }));
-    startTransition(async () => {
-      const result = await runAction("add-reply", { threadId, body });
-      if (!result.ok) {
-        setMutationError(result.error);
-        return;
-      }
-      setMutationError(null);
-      onMutate?.();
-    });
   }
 
   function confirmDecision() {
@@ -519,7 +232,7 @@ export function DeliverableViewer({
                       >
                         <p className="truncate font-medium">{s.title}</p>
                         <p className="mt-0.5 text-[0.625rem] text-[var(--text-tertiary)]">
-                          {s.type === "DESIGN" ? "Design" : "Doc"} · {decisionShort(s.decisionState)}
+                          {s.type === "DESIGN" ? "Design" : "Doc"} · {decisionShort(latestDecisionState(s))}
                         </p>
                       </Link>
                     </li>
@@ -761,10 +474,7 @@ export function DeliverableViewer({
                     draftPin={draftPin}
                     draftBody={draftBody}
                     onDraftBodyChange={setDraftBody}
-                    onCancelDraft={() => {
-                      setDraftPin(null);
-                      setDraftBody("");
-                    }}
+                    onCancelDraft={cancelDraftPin}
                     onSubmitDraft={submitDraftPin}
                     prototypeScreen={prototypeScreen}
                     iframeRef={iframeRef}
@@ -820,10 +530,7 @@ export function DeliverableViewer({
                 draftPin={draftPin}
                 draftBody={draftBody}
                 onDraftBodyChange={setDraftBody}
-                onCancelDraft={() => {
-                  setDraftPin(null);
-                  setDraftBody("");
-                }}
+                onCancelDraft={cancelDraftPin}
                 onSubmitDraft={submitDraftPin}
                 prototypeScreen={prototypeScreen}
                 iframeRef={iframeRef}
@@ -874,18 +581,7 @@ export function DeliverableViewer({
                         className="wf-link-muted"
                         onClick={(e) => {
                           e.stopPropagation();
-                          startTransition(async () => {
-                            const result = await runAction("toggle-thread-pinned", {
-                              threadId: thread.id,
-                              pinned: !thread.pinnedToTop,
-                            });
-                            if (!result.ok) {
-                              setMutationError(result.error);
-                              return;
-                            }
-                            setMutationError(null);
-                            onMutate?.();
-                          });
+                          toggleThreadPinned(thread.id, !thread.pinnedToTop);
                         }}
                       >
                         {thread.pinnedToTop ? "Unpin" : "Pin"}
@@ -894,18 +590,7 @@ export function DeliverableViewer({
                         className="wf-link-muted"
                         onClick={(e) => {
                           e.stopPropagation();
-                          startTransition(async () => {
-                            const result = await runAction("toggle-thread-resolved", {
-                              threadId: thread.id,
-                              resolved: !thread.resolved,
-                            });
-                            if (!result.ok) {
-                              setMutationError(result.error);
-                              return;
-                            }
-                            setMutationError(null);
-                            onMutate?.();
-                          });
+                          toggleThreadResolved(thread.id, !thread.resolved);
                         }}
                       >
                         {thread.resolved ? "Reopen" : "Resolve"}
@@ -1041,291 +726,12 @@ function FilesRail({
                     : "text-[var(--text-tertiary)]"
                 }`}
               >
-                {s.type === "DESIGN" ? "Design" : "Doc"} · {decisionShort(s.decisionState)}
+                {s.type === "DESIGN" ? "Design" : "Doc"} · {decisionShort(latestDecisionState(s))}
               </p>
             </Link>
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-function ReviewCanvas({
-  version,
-  mode,
-  onModeChange,
-  canvasRef,
-  canPin,
-  onCanvasClick,
-  sortedThreads,
-  activeThreadId,
-  onThreadSelect,
-  draftPin,
-  draftBody,
-  onDraftBodyChange,
-  onCancelDraft,
-  onSubmitDraft,
-  prototypeScreen,
-  iframeRef,
-  isExternalPrototype,
-  activeScreenshot,
-  captureStatus,
-  captureError,
-  onRefreshPreview,
-}: {
-  version: ActiveVersion;
-  mode: "interact" | "comment";
-  onModeChange: (mode: "interact" | "comment") => void;
-  canvasRef: React.RefObject<HTMLDivElement | null>;
-  canPin: boolean;
-  onCanvasClick: (e: React.MouseEvent<HTMLDivElement>) => void;
-  sortedThreads: Thread[];
-  activeThreadId: string | null;
-  onThreadSelect: (id: string) => void;
-  draftPin: { x: number; y: number } | null;
-  draftBody: string;
-  onDraftBodyChange: (value: string) => void;
-  onCancelDraft: () => void;
-  onSubmitDraft: () => void;
-  prototypeScreen: string | null;
-  iframeRef: React.RefObject<HTMLIFrameElement | null>;
-  isExternalPrototype: boolean;
-  activeScreenshot: Screenshot | null;
-  captureStatus: "idle" | "capturing" | "error";
-  captureError: string | null;
-  onRefreshPreview: () => void;
-}) {
-  const isPrototype = version.kind === "PROTOTYPE_URL";
-  const showingScreenshotSurface = isExternalPrototype && mode === "comment";
-  const canvasThreads = !isPrototype
-    ? sortedThreads
-    : isExternalPrototype
-    ? showingScreenshotSurface && activeScreenshot
-      ? sortedThreads.filter((t) => t.screenshotId === activeScreenshot.id)
-      : []
-    : sortedThreads.filter((t) => t.screen == null || t.screen === prototypeScreen);
-
-  return (
-    <div className="mx-auto max-w-4xl">
-      <div
-        ref={canvasRef}
-        onClick={onCanvasClick}
-        className={`relative overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--surface-page)] ${
-          canPin ? "cursor-crosshair" : ""
-        }`}
-      >
-        {showingScreenshotSurface ? (
-          <ScreenshotSurface
-            screenshot={activeScreenshot}
-            captureStatus={captureStatus}
-            captureError={captureError}
-            onRefreshPreview={onRefreshPreview}
-          />
-        ) : (
-          <ArtifactSurface version={version} interactMode={mode === "interact"} iframeRef={iframeRef} />
-        )}
-
-        {isPrototype ? (
-          <PrototypeModeControl mode={mode} onModeChange={onModeChange} />
-        ) : null}
-
-        {canvasThreads.map((thread) => {
-          const idx = sortedThreads.indexOf(thread);
-          return thread.xPct == null || thread.yPct == null ? null : (
-            <button
-              key={thread.id}
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onThreadSelect(thread.id);
-              }}
-              style={{ left: `${thread.xPct}%`, top: `${thread.yPct}%` }}
-              className={`absolute -translate-x-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full border text-[0.6875rem] font-semibold ${
-                thread.resolved
-                  ? "border-[var(--text-tertiary)] bg-[var(--surface-page)] text-[var(--text-secondary)]"
-                  : activeThreadId === thread.id
-                  ? "border-[var(--action-primary-bg)] bg-[var(--action-primary-bg)] text-[var(--action-primary-fg)]"
-                  : "border-[var(--action-primary-bg)] bg-[var(--surface-page)] text-[var(--action-primary-bg)]"
-              }`}
-            >
-              {idx + 1}
-            </button>
-          );
-        })}
-
-        {draftPin ? (
-          <div
-            style={{ left: `${draftPin.x}%`, top: `${draftPin.y}%` }}
-            className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
-          >
-            <div className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--action-primary-bg)] bg-[var(--surface-page)] text-[0.6875rem] font-semibold text-[var(--action-primary-bg)]">
-              +
-            </div>
-            <div className="absolute left-1/2 top-7 w-64 -translate-x-1/2 wf-panel p-3">
-              <textarea
-                autoFocus
-                className="wf-input w-full"
-                rows={2}
-                placeholder="Leave a comment"
-                value={draftBody}
-                onChange={(e) => onDraftBodyChange(e.target.value)}
-              />
-              <div className="mt-2 flex justify-end gap-2">
-                <button type="button" className="wf-btn" onClick={onCancelDraft}>
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="wf-btn-solid"
-                  onClick={onSubmitDraft}
-                  disabled={!draftBody.trim()}
-                >
-                  Comment
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
-      </div>
-      {canPin ? (
-        <p className="mt-3 text-center text-xs text-[var(--text-secondary)]">
-          {isExternalPrototype
-            ? "Click anywhere on the captured preview to leave a comment."
-            : isPrototype && prototypeScreen
-            ? `Click to leave a comment on the ${screenLabel(prototypeScreen)} page.`
-            : "Click anywhere on the file to leave a comment."}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function ScreenshotSurface({
-  screenshot,
-  captureStatus,
-  captureError,
-  onRefreshPreview,
-}: {
-  screenshot: Screenshot | null;
-  captureStatus: "idle" | "capturing" | "error";
-  captureError: string | null;
-  onRefreshPreview: () => void;
-}) {
-  if (captureStatus === "capturing" || (!screenshot && captureStatus !== "error")) {
-    return (
-      <div className="flex h-[600px] w-full items-center justify-center text-sm text-[var(--text-secondary)]">
-        Capturing a preview of this page…
-      </div>
-    );
-  }
-
-  if (captureStatus === "error" || !screenshot) {
-    return (
-      <div className="flex h-[600px] w-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-[var(--text-secondary)]">
-        <p>{captureError ?? "Unable to capture that page."}</p>
-        <button
-          type="button"
-          className="wf-btn text-xs"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRefreshPreview();
-          }}
-        >
-          Try again
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <img
-      src={screenshot.imageUrl}
-      alt="Captured prototype preview"
-      className="block w-full select-none"
-      draggable={false}
-    />
-  );
-}
-
-function PrototypeModeControl({
-  mode,
-  onModeChange,
-}: {
-  mode: "interact" | "comment";
-  onModeChange: (mode: "interact" | "comment") => void;
-}) {
-  return (
-    <div className="absolute bottom-3 left-1/2 z-20 -translate-x-1/2">
-      <div className="wf-segment text-xs shadow-[var(--elevation-card)]">
-        <button
-          type="button"
-          data-active={mode === "interact"}
-          className="px-3 py-1.5 transition-colors"
-          onClick={() => onModeChange("interact")}
-        >
-          Interact
-        </button>
-        <button
-          type="button"
-          data-active={mode === "comment"}
-          className="px-3 py-1.5 transition-colors"
-          onClick={() => onModeChange("comment")}
-        >
-          Comment
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ArtifactSurface({
-  version,
-  interactMode,
-  iframeRef,
-}: {
-  version: ActiveVersion;
-  interactMode: boolean;
-  iframeRef?: React.RefObject<HTMLIFrameElement | null>;
-}) {
-  if (version.kind === "STATIC_IMAGE") {
-    return (
-      <img
-        src={version.fileUrl ?? ""}
-        alt="Design version"
-        className="block w-full select-none"
-        draggable={false}
-      />
-    );
-  }
-
-  if (version.kind === "STATIC_PDF") {
-    return (
-      <object data={version.fileUrl ?? ""} type="application/pdf" className="h-[720px] w-full">
-        <p className="p-6 text-sm text-[var(--text-secondary)]">
-          PDF preview unavailable — {version.fileUrl}
-        </p>
-      </object>
-    );
-  }
-
-  if (version.kind === "MARKDOWN") {
-    return (
-      <div className="min-h-[500px] whitespace-pre-wrap p-8 font-mono text-sm leading-relaxed">
-        {version.content}
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative h-[1000px] w-full">
-      <iframe
-        ref={iframeRef}
-        src={version.prototypeUrl ?? ""}
-        className="h-full w-full border-0"
-        title="Hosted prototype"
-      />
-      {!interactMode ? <div className="absolute inset-0" aria-hidden /> : null}
     </div>
   );
 }

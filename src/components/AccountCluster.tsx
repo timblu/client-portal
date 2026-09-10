@@ -9,11 +9,13 @@ export function AccountCluster({
   roleLabel,
   currentUserId,
   switchTargets = [],
+  accentAvatar = false,
 }: {
   userName: string;
   roleLabel: string;
   currentUserId?: string;
   switchTargets?: SwitchTarget[];
+  accentAvatar?: boolean;
 }) {
   const navigate = useNavigate();
   const { refreshSession } = useRouteState();
@@ -37,7 +39,7 @@ export function AccountCluster({
       <ThemeToggle />
       <details className="relative">
         <summary
-          className="wf-avatar cursor-pointer list-none"
+          className={`wf-avatar cursor-pointer list-none ${accentAvatar ? "wf-avatar-accent" : ""}`}
           title={`${userName} · ${roleLabel}`}
           aria-label={`${userName}, account menu`}
         >

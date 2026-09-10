@@ -75,6 +75,8 @@ export function ClientShell({ children }: { children: ReactNode }) {
         currentUserId={user.id}
         switchTargets={session!.switchTargets}
         navLinks={admin ? [{ href: "/client/members", label: "Members" }] : []}
+        title="Zinc Design Portal"
+        accentAvatar
       />
       <main className="flex min-h-0 flex-1 flex-col">{children}</main>
     </div>

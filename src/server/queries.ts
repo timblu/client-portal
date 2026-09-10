@@ -175,7 +175,7 @@ export async function getStaffDeliverable(_user: User, deliverableId: string, ve
   const deliverable = await db.deliverable.findUnique({
     where: { id: deliverableId },
     include: {
-      project: true,
+      project: { include: { company: true } },
       versions: {
         orderBy: { versionNumber: "desc" },
         include: {
@@ -198,7 +198,7 @@ export async function getStaffDeliverable(_user: User, deliverableId: string, ve
 
   const siblingDeliverables = await db.deliverable.findMany({
     where: { projectId: deliverable.project.id },
-    include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
+    include: { versions: { orderBy: { versionNumber: "asc" } } },
     orderBy: { createdAt: "asc" },
   });
 
@@ -277,7 +277,7 @@ export async function getClientDeliverable(user: User, deliverableId: string, ve
   const deliverable = await db.deliverable.findUnique({
     where: { id: deliverableId },
     include: {
-      project: true,
+      project: { include: { company: true } },
       versions: {
         orderBy: { versionNumber: "desc" },
         include: {
@@ -300,7 +300,7 @@ export async function getClientDeliverable(user: User, deliverableId: string, ve
 
   const siblingDeliverables = await db.deliverable.findMany({
     where: { projectId: deliverable.project.id },
-    include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
+    include: { versions: { orderBy: { versionNumber: "asc" } } },
     orderBy: { createdAt: "asc" },
   });
 
@@ -373,7 +373,7 @@ function serializeDeliverableView(
   deliverable: {
     id: string;
     title: string;
-    project: { id: string; name: string };
+    project: { id: string; name: string; company: { name: string; logoUrl: string | null } };
     versions: {
       id: string;
       versionNumber: number;
@@ -416,7 +416,7 @@ function serializeDeliverableView(
     id: string;
     title: string;
     type: string;
-    versions: { decisionState: string }[];
+    versions: { id: string; versionNumber: number; decisionState: string }[];
   }[],
   currentUser: { id: string; name: string; role: "STAFF" | "CLIENT"; canDecide: boolean },
   basePath: "/staff" | "/client"
@@ -470,12 +470,20 @@ function serializeDeliverableView(
     },
     currentUser,
     basePath,
+    company: {
+      name: deliverable.project.company.name,
+      logoUrl: deliverable.project.company.logoUrl,
+    },
     crumb: { href: `${basePath}/projects/${deliverable.project.id}`, label: deliverable.project.name },
     siblings: siblingDeliverables.map((item) => ({
       id: item.id,
       title: item.title,
       type: item.type,
-      decisionState: item.versions[0]?.decisionState ?? "PENDING",
+      versions: item.versions.map((version) => ({
+        id: version.id,
+        versionNumber: version.versionNumber,
+        decisionState: version.decisionState,
+      })),
     })),
   };
 }
